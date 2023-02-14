@@ -19,7 +19,7 @@ func RunTestServer() *server.Server {
 func TestNats(t *testing.T) {
 	server := RunTestServer()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost", nil)
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	n.Close()
@@ -28,6 +28,6 @@ func TestNats(t *testing.T) {
 	assert.Equal(t, "DEBUG", log.Logs[0].Severity)
 	assert.Equal(t, "NATS ping rtt: %v, host: %s (%s)", log.Logs[0].Message)
 	assert.Len(t, log.Logs[0].Arguments, 3)
-	assert.Equal(t, "nats://localhost:4222", log.Logs[0].Arguments[1])
+	assert.Equal(t, "nats://localhost:8222", log.Logs[0].Arguments[1])
 	assert.Len(t, log.Logs[0].Arguments[2], 56, "invalid nats id")
 }
