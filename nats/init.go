@@ -8,11 +8,14 @@ import (
 )
 
 // NewNats will return a new nats connections
-func NewNats(log logger.Logger, name string, hosts string, credentials gnats.Option) (*gnats.Conn, error) {
+func NewNats(log logger.Logger, name string, hosts string, credentials gnats.Option, opts ...gnats.Option) (*gnats.Conn, error) {
+	_opts := make([]gnats.Option, 0)
+	copy(_opts, opts)
+	_opts = append(_opts, credentials)
+	_opts = append(_opts, gnats.Name(name))
 	nc, err := gnats.Connect(
 		hosts,
-		gnats.Name(name),
-		credentials,
+		_opts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to NATS hosts at %s. %s", hosts, err)
