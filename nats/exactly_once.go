@@ -97,6 +97,7 @@ func NewExactlyOnceConsumer(logger logger.Logger, js nats.JetStreamContext, stre
 		nats.Durable(durable),
 		nats.MaxDeliver(1),
 		nats.MaxAckPending(1),
+		nats.ManualAck(),
 		nats.AckExplicit(),
 		nats.Description(description),
 	)
