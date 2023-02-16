@@ -41,6 +41,12 @@ func (s *ExactlyOnceSubscriber) run() {
 		}
 		msgs, err := s.sub.Fetch(1)
 		if err != nil {
+			s.lock.Lock()
+			shutdown := s.shutdown
+			s.lock.Unlock()
+			if shutdown {
+				return
+			}
 			if strings.Contains(err.Error(), "timeout") {
 				continue
 			}
