@@ -52,11 +52,9 @@ func (s *ExactlyOnceSubscriber) run() {
 		if shutdown {
 			return
 		}
-		s.logger.Info("before fetch")
 		c, cf := context.WithTimeout(s.ctx, time.Minute)
 		msgs, err := s.sub.Fetch(1, nats.Context(c))
 		cf()
-		s.logger.Info("after fetch %s", err)
 		if err != nil {
 			s.lock.Lock()
 			shutdown := s.shutdown
@@ -146,11 +144,8 @@ func (s *ExactlyOnceSubscriber) run() {
 				ok = true
 				ackLock.Unlock()
 			}()
-			s.logger.Info("before wait")
 			wg.Wait()
-			s.logger.Info("after wait")
 			done()
-			s.logger.Info("after done, looping")
 		}
 	}
 }
