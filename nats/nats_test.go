@@ -1,6 +1,7 @@
 package nats
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -68,13 +69,15 @@ func TestExactlyOnceConsumer(t *testing.T) {
 	assert.NoError(t, err, "failed to create stream")
 	var received string
 	var msgid string
-	handler := func(buf []byte, _msgid string) error {
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
 		t.Log("received:", string(buf), "msgid:", _msgid)
 		received = string(buf)
 		msgid = _msgid
+		msg.AckSync()
 		return nil
 	}
-	sub, err := NewExactlyOnceConsumer(log, js, "test", "test", "test", "test.*", handler)
+	sub, err := NewExactlyOnceConsumer(context.TODO(), log, js, "test", "test", "test", "test.*", handler)
 	assert.NoError(t, err, "failed to create consumer")
 	assert.NotNil(t, sub, "sub result was nil")
 	_msgid := fmt.Sprintf("%v", time.Now().Unix())
