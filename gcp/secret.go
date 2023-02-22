@@ -3,6 +3,7 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
@@ -44,7 +45,7 @@ func WriteSecret(ctx context.Context, projectID string, name string, sercretValu
 		},
 	}
 	_, err = client.CreateSecret(ctx, createRequest)
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "AlreadyExists") {
 		return fmt.Errorf("failed to create secret: %v", err)
 	}
 
