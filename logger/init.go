@@ -1,5 +1,7 @@
 package logger
 
+import "regexp"
+
 type Sink interface {
 	// Write will receive the log output as a slice of bytes
 	Write([]byte) error
@@ -22,3 +24,5 @@ type Logger interface {
 	// Error level logging
 	Error(msg string, args ...interface{})
 }
+
+var ansiColorStripper = regexp.MustCompile("\x1b\\[[0-9;]*[mK]")

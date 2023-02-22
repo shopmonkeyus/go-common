@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 )
 
 // Entry defines a log entry
 // https://github.com/GoogleCloudPlatform/golang-samples/blob/08bc985b4973901c09344eabbe9d7d5add7dc656/run/logging-manual/main.go
 type Entry struct {
-	Message  string                 `json:"message"`
-	Severity string                 `json:"severity,omitempty"`
-	Trace    string                 `json:"logging.googleapis.com/trace,omitempty"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Timestamp time.Time              `json:"timestamp,omitempty"`
+	Message   string                 `json:"message"`
+	Severity  string                 `json:"severity,omitempty"`
+	Trace     string                 `json:"logging.googleapis.com/trace,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	// Logs Explorer allows filtering and display of this as `jsonPayload.component`.
 	Component string `json:"component,omitempty"`
 }
@@ -34,17 +36,14 @@ type gcloudLogger struct {
 	traceID   string
 	component string
 	sink      Sink
+	noConsole bool
 }
 
 var _ Logger = (*gcloudLogger)(nil)
 
 func (c *gcloudLogger) WithSink(sink Sink) Logger {
-	return &gcloudLogger{
-		metadata:  c.metadata,
-		traceID:   c.traceID,
-		component: c.component,
-		sink:      sink,
-	}
+	c.sink = sink
+	return c
 }
 
 func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
@@ -71,7 +70,13 @@ func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 	if len(kv) == 0 {
 		kv = nil
 	}
-	return &gcloudLogger{kv, traceID, component, nil}
+	return &gcloudLogger{
+		metadata:  kv,
+		traceID:   traceID,
+		component: component,
+		noConsole: c.noConsole,
+		sink:      c.sink,
+	}
 }
 
 func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
@@ -86,8 +91,12 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 		Metadata:  c.metadata,
 		Component: c.component,
 	}
-	log.Println(entry)
+	if !c.noConsole {
+		log.Println(entry)
+	}
 	if c.sink != nil {
+		entry.Timestamp = time.Now()
+		entry.Message = ansiColorStripper.ReplaceAllString(entry.Message, "")
 		buf, _ := json.Marshal(entry)
 		c.sink.Write(buf)
 	}
@@ -116,4 +125,9 @@ func (c *gcloudLogger) Error(msg string, args ...interface{}) {
 // NewGCloudLogger returns a new Logger instance which can be used for structured google cloud logging
 func NewGCloudLogger() Logger {
 	return &gcloudLogger{}
+}
+
+// NewGCloudLoggerWithSink returns a new Logger instance using a sink and suppressing the console logging
+func NewGCloudLoggerWithSink(sink Sink) Logger {
+	return &gcloudLogger{noConsole: true, sink: sink}
 }

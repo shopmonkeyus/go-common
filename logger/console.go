@@ -70,7 +70,8 @@ func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogg
 }
 
 func (c *consoleLogger) WithSink(sink Sink) Logger {
-	return c.Clone(c.metadata, sink)
+	c.sink = sink
+	return c
 }
 
 func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
@@ -116,7 +117,7 @@ func (c *consoleLogger) Log(levelColor string, messageColor string, levelString 
 	out := fmt.Sprintf("%s %s%s%s", level, prefix, message, suffix)
 	log.Printf("%s\n", out)
 	if c.sink != nil {
-		c.sink.Write([]byte(out))
+		c.sink.Write([]byte(ansiColorStripper.ReplaceAllString(out, "")))
 	}
 }
 
