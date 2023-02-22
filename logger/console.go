@@ -39,6 +39,7 @@ type consoleLogger struct {
 	warnMessageColor  string
 	errorLevelColor   string
 	errorMessageColor string
+	sink              Sink
 }
 
 var _ Logger = (*consoleLogger)(nil)
@@ -50,7 +51,7 @@ func (c *consoleLogger) Default(val string, def string) string {
 	return val
 }
 
-func (c *consoleLogger) Clone(kv map[string]interface{}) *consoleLogger {
+func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogger {
 	return &consoleLogger{
 		metadata:          kv,
 		prefix:            c.prefix,
@@ -64,7 +65,12 @@ func (c *consoleLogger) Clone(kv map[string]interface{}) *consoleLogger {
 		warnMessageColor:  c.Default(c.warnMessageColor, Magenta),
 		errorLevelColor:   c.Default(c.errorMessageColor, RedBold),
 		errorMessageColor: c.Default(c.errorMessageColor, Red),
+		sink:              sink,
 	}
+}
+
+func (c *consoleLogger) WithSink(sink Sink) Logger {
+	return c.Clone(c.metadata, sink)
 }
 
 func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
@@ -80,11 +86,11 @@ func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
 	}
 	if prefix, found := kv["prefix"]; found {
 		delete(kv, "prefix")
-		l := c.Clone(kv)
+		l := c.Clone(kv, c.sink)
 		l.prefix = prefix.(string)
 		return l
 	}
-	return c.Clone(kv)
+	return c.Clone(kv, c.sink)
 }
 
 func (c *consoleLogger) Log(levelColor string, messageColor string, levelString string, msg string, args ...interface{}) {
@@ -107,7 +113,11 @@ func (c *consoleLogger) Log(levelColor string, messageColor string, levelString 
 	}
 	level := levelColor + fmt.Sprintf("[%s]%s", levelString, levelSuffix) + Reset
 	message := messageColor + _msg + Reset
-	log.Printf("%s %s%s%s\n", level, prefix, message, suffix)
+	out := fmt.Sprintf("%s %s%s%s", level, prefix, message, suffix)
+	log.Printf("%s\n", out)
+	if c.sink != nil {
+		c.sink.Write([]byte(out))
+	}
 }
 
 func (c *consoleLogger) Trace(msg string, args ...interface{}) {
@@ -132,5 +142,5 @@ func (c *consoleLogger) Error(msg string, args ...interface{}) {
 
 // NewConsoleLogger returns a new Logger instance which will log to the console
 func NewConsoleLogger() Logger {
-	return (&consoleLogger{}).Clone(nil)
+	return (&consoleLogger{}).Clone(nil, nil)
 }

@@ -13,6 +13,10 @@ type TestLogger struct {
 
 var _ Logger = (*TestLogger)(nil)
 
+func (c *TestLogger) WithSink(sink Sink) Logger {
+	return c
+}
+
 func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 	kv := metadata
 	if c.metadata != nil {
