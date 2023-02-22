@@ -33,9 +33,19 @@ type gcloudLogger struct {
 	metadata  map[string]interface{}
 	traceID   string
 	component string
+	sink      Sink
 }
 
 var _ Logger = (*gcloudLogger)(nil)
+
+func (c *gcloudLogger) WithSink(sink Sink) Logger {
+	return &gcloudLogger{
+		metadata:  c.metadata,
+		traceID:   c.traceID,
+		component: c.component,
+		sink:      sink,
+	}
+}
 
 func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 	traceID := c.traceID
@@ -61,7 +71,7 @@ func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 	if len(kv) == 0 {
 		kv = nil
 	}
-	return &gcloudLogger{kv, traceID, component}
+	return &gcloudLogger{kv, traceID, component, nil}
 }
 
 func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
@@ -69,13 +79,18 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 	if len(args) > 0 {
 		_msg = fmt.Sprintf(msg, args...)
 	}
-	log.Println(Entry{
+	entry := Entry{
 		Severity:  severity,
 		Message:   _msg,
 		Trace:     c.traceID,
 		Metadata:  c.metadata,
 		Component: c.component,
-	})
+	}
+	log.Println(entry)
+	if c.sink != nil {
+		buf, _ := json.Marshal(entry)
+		c.sink.Write(buf)
+	}
 }
 
 func (c *gcloudLogger) Trace(msg string, args ...interface{}) {
