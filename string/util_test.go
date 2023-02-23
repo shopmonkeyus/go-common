@@ -2,13 +2,26 @@ package string
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestContains(t *testing.T) {
-	assert.True(t, Contains([]string{"A", "B", "C"}, "A", false), "they should match")
-	assert.False(t, Contains([]string{"A", "B", "C"}, "D", false), "they should not match")
-	assert.True(t, Contains([]string{"A", "B", "C"}, "a", true), "they should match")
-	assert.False(t, Contains([]string{"A", "B", "C"}, "f", true), "they should not match")
+	tests := []struct {
+		haystack        []string
+		needle          string
+		caseInsensitive bool
+		expected        bool
+	}{
+		{[]string{"A", "B", "C"}, "A", false, true},
+		{[]string{"A", "B", "C"}, "D", false, false},
+		{[]string{"A", "B", "C"}, "a", true, true},
+		{[]string{"A", "B", "C"}, "f", true, false},
+	}
+
+	for _, test := range tests {
+		result := Contains(test.haystack, test.needle, test.caseInsensitive)
+		if result != test.expected {
+			t.Errorf("Contains(%v, %v, %v) returned %v, expected %v",
+				test.haystack, test.needle, test.caseInsensitive, result, test.expected)
+		}
+	}
 }

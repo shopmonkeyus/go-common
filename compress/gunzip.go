@@ -3,25 +3,21 @@ package compress
 import (
 	"bytes"
 	"compress/gzip"
-	"io"
 )
 
 // Gunzip will unzip data and return buffer inline
-func Gunzip(data []byte) (resData []byte, err error) {
-	b := bytes.NewBuffer(data)
-
-	var r io.Reader
-	r, err = gzip.NewReader(b)
+func Gunzip(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return
+		return nil, err
 	}
+	defer r.Close()
 
 	var resB bytes.Buffer
 	_, err = resB.ReadFrom(r)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	resData = resB.Bytes()
-	return
+	return append([]byte(nil), resB.Bytes()...), nil
 }

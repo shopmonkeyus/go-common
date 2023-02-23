@@ -1,14 +1,27 @@
 package string
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMasking(t *testing.T) {
-	assert.Equal(t, "foo***", Mask("foobar"), "they should be equal")
-	assert.Equal(t, "f**", Mask("foo"), "they should be equal")
-	assert.Equal(t, "*", Mask("f"), "they should be equal")
-	assert.Equal(t, "", Mask(""), "they should be equal")
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"foobar", "foo***"},
+		{"foo", "f**"},
+		{"f", "*"},
+		{"", ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("Mask(%q)", tc.input), func(t *testing.T) {
+			output := Mask(tc.input)
+			assert.Equal(t, tc.expected, output)
+		})
+	}
 }

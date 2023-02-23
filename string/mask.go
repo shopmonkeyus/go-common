@@ -1,7 +1,6 @@
 package string
 
 import (
-	"bytes"
 	"strings"
 )
 
@@ -14,8 +13,5 @@ func Mask(s string) string {
 		return "*"
 	}
 	h := int(l / 2)
-	var buf bytes.Buffer
-	buf.WriteString(s[0:h])
-	buf.WriteString(strings.Repeat("*", l-h))
-	return buf.String()
+	return s[0:h] + strings.Repeat("*", l-h)
 }

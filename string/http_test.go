@@ -1,6 +1,7 @@
 package string
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -8,7 +9,37 @@ import (
 )
 
 func TestMaskHeaders(t *testing.T) {
-	assert.Equal(t, map[string]string{"a": "*"}, MaskHeaders(http.Header{"a": []string{"b"}}, []string{"a"}), "they should be equal")
-	assert.Equal(t, map[string]string{"a": "b"}, MaskHeaders(http.Header{"a": []string{"b"}}, []string{"b"}), "they should be equal")
-	assert.Equal(t, map[string]string{"a": "*", "b": "*"}, MaskHeaders(http.Header{"a": []string{"b"}, "b": []string{"c"}}, []string{"a", "b"}), "they should be equal")
+	testCases := []struct {
+		name        string
+		headers     http.Header
+		maskHeaders []string
+		expected    map[string]string
+	}{
+		{
+			name:        "mask one header",
+			headers:     http.Header{"a": []string{"b"}},
+			maskHeaders: []string{"a"},
+			expected:    map[string]string{"a": "*"},
+		},
+		{
+			name:        "do not mask any headers",
+			headers:     http.Header{"a": []string{"b"}},
+			maskHeaders: []string{"c"},
+			expected:    map[string]string{"a": "b"},
+		},
+		{
+			name:        "mask multiple headers",
+			headers:     http.Header{"a": []string{"b"}, "b": []string{"c"}},
+			maskHeaders: []string{"a", "b"},
+			expected:    map[string]string{"a": "*", "b": "*"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := MaskHeaders(tc.headers, tc.maskHeaders)
+			assert.Equal(t, tc.expected, result)
+			fmt.Println(tc.name)
+		})
+	}
 }

@@ -2,13 +2,17 @@ package string
 
 import "strings"
 
-// Contains returns true if needle is found in haystack based on caseinsensitive
-func Contains(haystack []string, needle string, caseinsensitive bool) bool {
-	for _, v := range haystack {
-		if caseinsensitive && strings.EqualFold(v, needle) {
-			return true
+// Contains returns true if the search string is found in the slice
+func Contains(slice []string, search string, caseInsensitive bool) bool {
+	for _, s := range slice {
+		if caseInsensitive {
+			if strings.EqualFold(s, search) {
+				return true
+			}
+			continue
 		}
-		if v == needle {
+
+		if s == search {
 			return true
 		}
 	}
