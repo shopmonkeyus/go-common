@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	gstrings "github.com/shopmonkeyus/go-common/string"
 )
 
 const (
@@ -27,7 +29,7 @@ const (
 )
 
 type consoleLogger struct {
-	prefix            string
+	prefixes          []string
 	metadata          map[string]interface{}
 	traceLevelColor   string
 	traceMessageColor string
@@ -52,9 +54,11 @@ func (c *consoleLogger) Default(val string, def string) string {
 }
 
 func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogger {
+	prefixes := make([]string, 0)
+	prefixes = append(prefixes, c.prefixes...)
 	return &consoleLogger{
 		metadata:          kv,
-		prefix:            c.prefix,
+		prefixes:          prefixes,
 		traceLevelColor:   c.Default(c.traceLevelColor, CyanBold),
 		traceMessageColor: c.Default(c.traceMessageColor, Gray),
 		debugLevelColor:   c.Default(c.debugLevelColor, BlueBold),
@@ -85,11 +89,19 @@ func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
 			kv[k] = v
 		}
 	}
-	if prefix, found := kv["prefix"]; found {
+	if prefix, found := kv["prefix"].(string); found && prefix != "" {
 		delete(kv, "prefix")
+		prefixes := make([]string, 0)
+		prefixes = append(prefixes, c.prefixes...)
+		if !gstrings.Contains(prefixes, prefix, false) {
+			prefixes = append(prefixes, prefix)
+		}
 		l := c.Clone(kv, c.sink)
-		l.prefix = prefix.(string)
+		l.prefixes = prefixes
 		return l
+	}
+	if len(kv) == 0 {
+		kv = nil
 	}
 	return c.Clone(kv, c.sink)
 }
@@ -98,8 +110,8 @@ func (c *consoleLogger) Log(levelColor string, messageColor string, levelString 
 	_msg := fmt.Sprintf(msg, args...)
 	var prefix string
 	var suffix string
-	if c.prefix != "" {
-		prefix = Purple + c.prefix + Reset + " "
+	if len(c.prefixes) > 0 {
+		prefix = Purple + strings.Join(c.prefixes, " ") + Reset + " "
 	}
 	if c.metadata != nil {
 		buf, _ := json.Marshal(c.metadata)
