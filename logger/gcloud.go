@@ -46,6 +46,11 @@ func (c *gcloudLogger) WithSink(sink Sink) Logger {
 	return c
 }
 
+// WithPrefix will return a new logger with a prefix prepended to the message
+func (c *gcloudLogger) WithPrefix(prefix string) Logger {
+	return c
+}
+
 func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 	traceID := c.traceID
 	component := c.component
