@@ -53,6 +53,18 @@ func (c *consoleLogger) Default(val string, def string) string {
 	return val
 }
 
+// WithPrefix will return a new logger with a prefix prepended to the message
+func (c *consoleLogger) WithPrefix(prefix string) Logger {
+	prefixes := make([]string, 0)
+	prefixes = append(prefixes, c.prefixes...)
+	if !gstrings.Contains(prefixes, prefix, false) {
+		prefixes = append(prefixes, prefix)
+	}
+	l := c.Clone(c.metadata, c.sink)
+	l.prefixes = prefixes
+	return l
+}
+
 func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogger {
 	prefixes := make([]string, 0)
 	prefixes = append(prefixes, c.prefixes...)
@@ -88,17 +100,6 @@ func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
 		for k, v := range metadata {
 			kv[k] = v
 		}
-	}
-	if prefix, found := kv["prefix"].(string); found && prefix != "" {
-		delete(kv, "prefix")
-		prefixes := make([]string, 0)
-		prefixes = append(prefixes, c.prefixes...)
-		if !gstrings.Contains(prefixes, prefix, false) {
-			prefixes = append(prefixes, prefix)
-		}
-		l := c.Clone(kv, c.sink)
-		l.prefixes = prefixes
-		return l
 	}
 	if len(kv) == 0 {
 		kv = nil

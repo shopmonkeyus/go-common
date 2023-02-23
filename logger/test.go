@@ -17,6 +17,11 @@ func (c *TestLogger) WithSink(sink Sink) Logger {
 	return c
 }
 
+// WithPrefix will return a new logger with a prefix prepended to the message
+func (c *TestLogger) WithPrefix(prefix string) Logger {
+	return c
+}
+
 func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 	kv := metadata
 	if c.metadata != nil {
