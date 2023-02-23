@@ -8,55 +8,48 @@ import (
 
 var re = regexp.MustCompile(`(\$?{(.*?)})`)
 
-// InterpolateString will replace { } in string
+// InterpolateString replaces { } in string with values from environment maps.
 func InterpolateString(val string, env ...map[string]interface{}) (string, error) {
 	if val == "" {
 		return val, nil
 	}
-	errors := make(chan error, 100)
+	var err error
 	val = re.ReplaceAllStringFunc(val, func(s string) string {
 		tok := re.FindStringSubmatch(s)
 		key := tok[2]
 		def := s
 		var required bool
-		if key[0:1] == "!" {
+		if strings.HasPrefix(key, "!") {
 			key = key[1:]
 			required = true
 		}
-		idx := strings.Index(key, ":-")
-		if idx > 0 {
+		if idx := strings.Index(key, ":-"); idx != -1 {
 			def = key[idx+2:]
-			key = key[0:idx]
+			key = key[:idx]
 		}
 		var v interface{}
 		for _, e := range env {
-			nv := e[key]
-			if nv != nil {
+			if nv, ok := e[key]; ok {
 				v = nv
 				break
 			}
 		}
 		if v == nil {
 			if required {
-				errors <- fmt.Errorf("required value not found for key '%s'", key)
+				err = fmt.Errorf("required value not found for key '%s'", key)
 			}
 			return def
 		}
-		switch v.(type) {
-		case string:
-			if v == "" {
-				if required {
-					errors <- fmt.Errorf("required value not found for key '%s'", key)
-				}
-				return def
+		if v == "" {
+			if required {
+				err = fmt.Errorf("required value not found for key '%s'", key)
 			}
+			return def
 		}
-		return fmt.Sprintf("%v", v)
+		return fmt.Sprint(v)
 	})
-	select {
-	case err := <-errors:
+	if err != nil {
 		return "", err
-	default:
 	}
 	return val, nil
 }

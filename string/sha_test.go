@@ -7,7 +7,41 @@ import (
 )
 
 func TestSHA256(t *testing.T) {
-	assert.Equal(t, "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2", SHA256([]byte("foobar")), "should hash")
-	assert.Equal(t, "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2", SHA256([]byte("foo"), []byte("bar")), "should hash")
-	assert.Equal(t, "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2", SHA256([]byte("f"), []byte("o"), []byte("o"), []byte("b"), []byte("a"), []byte("r")), "should hash")
+	testCases := []struct {
+		name   string
+		data   []byte
+		extras [][]byte
+		want   string
+	}{
+		{
+			name: "single data",
+			data: []byte("foobar"),
+			want: "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
+		},
+		{
+			name:   "data with extra",
+			data:   []byte("foo"),
+			extras: [][]byte{[]byte("bar")},
+			want:   "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
+		},
+		{
+			name: "data with multiple extras",
+			data: []byte("f"),
+			extras: [][]byte{
+				[]byte("o"),
+				[]byte("o"),
+				[]byte("b"),
+				[]byte("a"),
+				[]byte("r"),
+			},
+			want: "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SHA256(tc.data, tc.extras...)
+			assert.Equal(t, tc.want, got, "unexpected hash result")
+		})
+	}
 }

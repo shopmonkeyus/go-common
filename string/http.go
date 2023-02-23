@@ -8,13 +8,13 @@ import (
 // MaskHeaders will return a stringified version of headers
 // masking the headers passed in by name
 func MaskHeaders(h http.Header, maskHeaders []string) map[string]string {
-	hh := map[string]string{}
-	for key, hk := range h {
-		if Contains(maskHeaders, key, true) {
-			hh[key] = Mask(strings.Join(hk, ", "))
-		} else {
-			hh[key] = strings.Join(hk, ", ")
+	hh := make(map[string]string, len(h))
+	for k, v := range h {
+		if Contains(maskHeaders, k, true) {
+			hh[k] = Mask(strings.Join(v, ", "))
+			continue
 		}
+		hh[k] = strings.Join(v, ", ")
 	}
 	return hh
 }
