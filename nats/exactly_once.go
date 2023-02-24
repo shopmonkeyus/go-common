@@ -159,7 +159,6 @@ func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.J
 		AckPolicy:     nats.AckExplicitPolicy,
 		MaxAckPending: 1,
 		DeliverPolicy: nats.DeliverNewPolicy,
-		MaxWaiting:    1,
 	})
 	if err != nil {
 		return nil, err
@@ -172,7 +171,6 @@ func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.J
 		nats.AckExplicit(),
 		nats.Description(description),
 		nats.DeliverNew(),
-		nats.PullMaxWaiting(1),
 	)
 	if err != nil {
 		return nil, err
