@@ -6,8 +6,6 @@ import (
 	"log"
 	"strings"
 	"time"
-
-	gstrings "github.com/shopmonkeyus/go-common/string"
 )
 
 // Entry defines a log entry
@@ -54,10 +52,8 @@ func (c *gcloudLogger) WithPrefix(prefix string) Logger {
 	if c.component == "" {
 		c.component = prefix
 	} else {
-		tok := strings.Split(c.component, " ")
-		if !gstrings.Contains(tok, prefix, false) {
-			tok = append(tok, prefix)
-			c.component = strings.Join(tok, " ")
+		if !strings.Contains(c.component, prefix) {
+			c.component = c.component + " " + prefix
 		}
 	}
 	return c
