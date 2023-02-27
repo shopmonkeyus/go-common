@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/secretmanager v1.10.0
 	github.com/nats-io/nats-server/v2 v2.9.14
 	github.com/nats-io/nats.go v1.24.0
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	golang.org/x/oauth2 v0.5.0
 	google.golang.org/api v0.110.0
 )
