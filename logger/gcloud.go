@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -48,6 +49,13 @@ func (c *gcloudLogger) WithSink(sink Sink) Logger {
 
 // WithPrefix will return a new logger with a prefix prepended to the message
 func (c *gcloudLogger) WithPrefix(prefix string) Logger {
+	if c.component == "" {
+		c.component = prefix
+	} else {
+		if !strings.Contains(c.component, prefix) {
+			c.component = c.component + " " + prefix
+		}
+	}
 	return c
 }
 
