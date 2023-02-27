@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
+
+	gstrings "github.com/shopmonkeyus/go-common/string"
 )
 
 // Entry defines a log entry
@@ -48,6 +51,15 @@ func (c *gcloudLogger) WithSink(sink Sink) Logger {
 
 // WithPrefix will return a new logger with a prefix prepended to the message
 func (c *gcloudLogger) WithPrefix(prefix string) Logger {
+	if c.component == "" {
+		c.component = prefix
+	} else {
+		tok := strings.Split(c.component, " ")
+		if !gstrings.Contains(tok, prefix, false) {
+			tok = append(tok, prefix)
+			c.component = strings.Join(tok, " ")
+		}
+	}
 	return c
 }
 
