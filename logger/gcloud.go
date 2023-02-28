@@ -49,14 +49,15 @@ func (c *gcloudLogger) WithSink(sink Sink) Logger {
 
 // WithPrefix will return a new logger with a prefix prepended to the message
 func (c *gcloudLogger) WithPrefix(prefix string) Logger {
+	newlogger := c.With(nil).(*gcloudLogger)
 	if c.component == "" {
-		c.component = prefix
+		newlogger.component = prefix
 	} else {
 		if !strings.Contains(c.component, prefix) {
-			c.component = c.component + " " + prefix
+			newlogger.component = c.component + " " + prefix
 		}
 	}
-	return c
+	return newlogger
 }
 
 func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
@@ -103,12 +104,12 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 		Trace:     c.traceID,
 		Metadata:  c.metadata,
 		Component: c.component,
+		Timestamp: time.Now(),
 	}
 	if !c.noConsole {
 		log.Println(entry)
 	}
 	if c.sink != nil {
-		entry.Timestamp = time.Now()
 		entry.Message = ansiColorStripper.ReplaceAllString(entry.Message, "")
 		buf, _ := json.Marshal(entry)
 		c.sink.Write(buf)
