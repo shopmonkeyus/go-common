@@ -150,36 +150,62 @@ func (s *ExactlyOnceSubscriber) run() {
 	}
 }
 
+type ExactlyOnceConsumerConfig struct {
+	Context             context.Context
+	Logger              logger.Logger
+	JetStream           nats.JetStreamContext
+	StreamName          string
+	DurableName         string
+	ConsumerDescription string
+	FilterSubject       string
+	Handler             ExactlyOnceHandler
+	DeliverPolicy       nats.DeliverPolicy
+	Deliver             nats.SubOpt
+	MaxAckPending       int
+}
+
 // NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
-func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, durable string, description string, subject string, handler ExactlyOnceHandler) (*ExactlyOnceSubscriber, error) {
-	_, err := js.AddConsumer(stream, &nats.ConsumerConfig{
-		Durable:       durable,
-		Description:   description,
-		FilterSubject: subject,
+func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (*ExactlyOnceSubscriber, error) {
+	maxAckPending := 1
+	if config.MaxAckPending > 0 {
+		maxAckPending = config.MaxAckPending
+	}
+	deliver := config.Deliver
+	if deliver == nil {
+		deliver = nats.DeliverNew()
+	}
+	deliverPolicy := nats.DeliverNewPolicy
+	if config.DeliverPolicy > 0 {
+		deliverPolicy = config.DeliverPolicy
+	}
+	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
+		Durable:       config.DurableName,
+		Description:   config.ConsumerDescription,
+		FilterSubject: config.FilterSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: 1,
-		DeliverPolicy: nats.DeliverNewPolicy,
+		MaxAckPending: maxAckPending,
+		DeliverPolicy: deliverPolicy,
 	})
 	if err != nil {
 		return nil, err
 	}
-	sub, err := js.PullSubscribe(
-		subject,
-		durable,
-		nats.MaxAckPending(1),
+	sub, err := config.JetStream.PullSubscribe(
+		config.FilterSubject,
+		config.DurableName,
+		nats.MaxAckPending(maxAckPending),
 		nats.ManualAck(),
 		nats.AckExplicit(),
-		nats.Description(description),
-		nats.DeliverNew(),
+		nats.Description(config.ConsumerDescription),
+		deliver,
 	)
 	if err != nil {
 		return nil, err
 	}
-	_ctx, cancel := context.WithCancel(ctx)
+	_ctx, cancel := context.WithCancel(config.Context)
 	eos := &ExactlyOnceSubscriber{
-		logger:   logger,
+		logger:   config.Logger,
 		sub:      sub,
-		handler:  handler,
+		handler:  config.Handler,
 		shutdown: false,
 		lock:     &sync.Mutex{},
 		wg:       &sync.WaitGroup{},
@@ -188,4 +214,18 @@ func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.J
 	}
 	go eos.run()
 	return eos, nil
+}
+
+// NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
+func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, durable string, description string, subject string, handler ExactlyOnceHandler) (*ExactlyOnceSubscriber, error) {
+	return NewExactlyOnceConsumerWithConfig(ExactlyOnceConsumerConfig{
+		Context:             ctx,
+		Logger:              logger,
+		JetStream:           js,
+		StreamName:          stream,
+		DurableName:         durable,
+		ConsumerDescription: description,
+		FilterSubject:       subject,
+		Handler:             handler,
+	})
 }
