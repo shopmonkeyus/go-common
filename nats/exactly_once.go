@@ -174,10 +174,7 @@ func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (*Exactl
 	if deliver == nil {
 		deliver = nats.DeliverNew()
 	}
-	deliverPolicy := nats.DeliverNewPolicy
-	if config.DeliverPolicy > 0 {
-		deliverPolicy = config.DeliverPolicy
-	}
+	deliverPolicy := config.DeliverPolicy
 	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 		Durable:       config.DurableName,
 		Description:   config.ConsumerDescription,
