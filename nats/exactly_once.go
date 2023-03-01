@@ -224,5 +224,7 @@ func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.J
 		ConsumerDescription: description,
 		FilterSubject:       subject,
 		Handler:             handler,
+		DeliverPolicy:       nats.DeliverNewPolicy,
+		Deliver:             nats.DeliverNew(),
 	})
 }
