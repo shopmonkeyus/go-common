@@ -8,7 +8,7 @@ require (
 	github.com/nats-io/nats.go v1.25.0
 	github.com/stretchr/testify v1.8.2
 	golang.org/x/oauth2 v0.7.0
-	google.golang.org/api v0.120.0
+	google.golang.org/api v0.121.0
 )
 
 require (
