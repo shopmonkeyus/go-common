@@ -88,6 +88,7 @@ func (s *ExactlyOnceSubscriber) run() {
 			s.logger.Info("processing msg: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
 			encoding := msg.Header.Get("content-encoding")
 			gzipped := encoding == "gzip/json"
+			started := time.Now()
 			var err error
 			data := msg.Data
 			if gzipped {
@@ -115,7 +116,7 @@ func (s *ExactlyOnceSubscriber) run() {
 						done()
 						return
 					case <-time.After(time.Second * 28):
-						s.logger.Debug("extending ack timeout (%s/%d)", msgid, md.Sequence.Consumer)
+						s.logger.Debug("extending ack timeout (%s/%d) running %v", msgid, md.Sequence.Consumer, time.Since(started))
 						msg.InProgress()
 					}
 				}
