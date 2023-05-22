@@ -212,3 +212,73 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	n.Close()
 	server.Shutdown()
 }
+
+func TestEphemeralConsumer(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	queue := fmt.Sprintf("ephem%v", time.Now().Unix())
+	subject := queue + ".>"
+	message := queue + ".test"
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{subject},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var received1 string
+	var msgid1 string
+	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		t.Log("1 received:", string(buf), "msgid:", _msgid)
+		received1 = string(buf)
+		msgid1 = _msgid
+		msg.AckSync()
+		return nil
+	}
+	sub1, err := NewEphemeralConsumer(context.TODO(), log, js, queue, "etest", subject, handler1)
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
+	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
+	assert.NoError(t, err, "failed to publish")
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
+	sub1.Close()
+	received1 = ""
+	msgid1 = ""
+	sub2, err := NewEphemeralConsumerWithConfig(EphemeralConsumerConfig{
+		Context:             context.TODO(),
+		Logger:              log,
+		JetStream:           js,
+		StreamName:          queue,
+		ConsumerDescription: "",
+		FilterSubject:       subject,
+		Handler:             handler1,
+		DeliverPolicy:       nats.DeliverAllPolicy,
+		Deliver:             nats.DeliverAll(),
+	})
+	assert.NoError(t, err, "failed to create consumer 2")
+	assert.NotNil(t, sub2, "sub2 result was nil")
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
+	sub2.Close()
+	received1 = ""
+	msgid1 = ""
+	sub3, err := NewEphemeralConsumerDeliverAll(context.TODO(), log, js, queue, "etest", subject, handler1)
+	assert.NoError(t, err, "failed to create consumer 3")
+	assert.NotNil(t, sub3, "sub3 result was nil")
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
+	sub3.Close()
+	n.Close()
+	server.Shutdown()
+}
