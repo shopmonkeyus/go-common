@@ -116,7 +116,6 @@ func (s *subscriber) run() {
 			}
 			s.logger.Info("processing msg: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
 			encoding := msg.Header.Get("content-encoding")
-			// FIXME:msgpack
 			gzipped := encoding == "gzip/json"
 			started := time.Now()
 			var err error
