@@ -7,7 +7,7 @@ import (
 	"github.com/shopmonkeyus/go-common/logger"
 )
 
-type ExactlyOnceConsumerConfig struct {
+type QueueConsumerConfig struct {
 	Context             context.Context
 	Logger              logger.Logger
 	JetStream           nats.JetStreamContext
@@ -18,15 +18,11 @@ type ExactlyOnceConsumerConfig struct {
 	Handler             Handler
 	DeliverPolicy       nats.DeliverPolicy
 	Deliver             nats.SubOpt
-	MaxAckPending       int
 }
 
-// NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
-func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (Subscriber, error) {
-	maxAckPending := 1
-	if config.MaxAckPending > 0 {
-		maxAckPending = config.MaxAckPending
-	}
+// NewQueueConsumerWithConfig will create (or reuse) queue consumer
+func NewQueueConsumerWithConfig(config QueueConsumerConfig) (Subscriber, error) {
+	maxAckPending := 1000
 	deliver := config.Deliver
 	if deliver == nil {
 		deliver = nats.DeliverNew()
@@ -39,6 +35,7 @@ func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (Subscri
 		AckPolicy:     nats.AckExplicitPolicy,
 		MaxAckPending: maxAckPending,
 		DeliverPolicy: deliverPolicy,
+		MaxDeliver:    1,
 	})
 	if err != nil {
 		return nil, err
@@ -64,9 +61,9 @@ func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (Subscri
 	return eos, nil
 }
 
-// NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
-func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, durable string, description string, subject string, handler Handler) (Subscriber, error) {
-	return NewExactlyOnceConsumerWithConfig(ExactlyOnceConsumerConfig{
+// NewQueueConsumer will create (or reuse) a queue consumer with default config
+func NewQueueConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, durable string, description string, subject string, handler Handler) (Subscriber, error) {
+	return NewQueueConsumerWithConfig(QueueConsumerConfig{
 		Context:             ctx,
 		Logger:              logger,
 		JetStream:           js,

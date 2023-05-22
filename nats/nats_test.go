@@ -23,6 +23,7 @@ func RunTestServer(js bool) *server.Server {
 
 func TestNats(t *testing.T) {
 	server := RunTestServer(false)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
 	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
 	assert.NoError(t, err, "failed to connect to nats")
@@ -39,6 +40,7 @@ func TestNats(t *testing.T) {
 
 func TestNatsWithOpts(t *testing.T) {
 	server := RunTestServer(false)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
 	n, err := NewNats(log, "test", "nats://localhost:8222,nats://foo:9822,nats://bar:9100", nil, nats.DontRandomize())
 	assert.NoError(t, err, "failed to connect to nats")
@@ -55,6 +57,7 @@ func TestNatsWithOpts(t *testing.T) {
 
 func TestExactlyOnceConsumer(t *testing.T) {
 	server := RunTestServer(true)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
 	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
 	assert.NoError(t, err, "failed to connect to nats")
@@ -62,9 +65,10 @@ func TestExactlyOnceConsumer(t *testing.T) {
 	js, err := n.JetStream()
 	assert.NoError(t, err, "failed to create jetstream")
 	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("stream%v", time.Now().Unix())
 	_, err = js.AddStream(&nats.StreamConfig{
-		Name:     "test",
-		Subjects: []string{"test.>"},
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
 	})
 	assert.NoError(t, err, "failed to create stream")
 	var received string
@@ -77,16 +81,134 @@ func TestExactlyOnceConsumer(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub, err := NewExactlyOnceConsumer(context.TODO(), log, js, "test", "test", "test", "test.*", handler)
+	sub, err := NewExactlyOnceConsumer(context.TODO(), log, js, queue, "test", "test", queue+".*", handler)
 	assert.NoError(t, err, "failed to create consumer")
 	assert.NotNil(t, sub, "sub result was nil")
 	_msgid := fmt.Sprintf("%v", time.Now().Unix())
-	_, err = js.Publish("test.test", []byte("hi"), nats.MsgId(_msgid))
+	_, err = js.Publish(queue+".test", []byte("hi"), nats.MsgId(_msgid))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Millisecond * 100)
 	assert.Equal(t, "hi", received, "message didnt match")
 	assert.Equal(t, _msgid, msgid, "msgid didnt match")
 	sub.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestQueueConsumer(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	queue := fmt.Sprintf("qc%v", time.Now().Unix())
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	log.Debug("error: %v", err)
+	assert.NoError(t, err, "failed to create stream")
+	var received1 string
+	var msgid1 string
+	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		t.Log("1 received:", string(buf), "msgid:", _msgid)
+		received1 = string(buf)
+		msgid1 = _msgid
+		msg.AckSync()
+		return nil
+	}
+	var received2 string
+	var msgid2 string
+	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		t.Log("2 received:", string(buf), "msgid:", _msgid)
+		received2 = string(buf)
+		msgid2 = _msgid
+		msg.AckSync()
+		return nil
+	}
+	sub1, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest1", "qtest", queue+".*", handler1)
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	sub2, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest2", "qtest", queue+".*", handler2)
+	assert.NoError(t, err, "failed to create consumer 2")
+	assert.NotNil(t, sub1, "sub2 result was nil")
+	_msgid := fmt.Sprintf("%v", time.Now().Unix())
+	_, err = js.Publish(queue+".test", []byte("hi"), nats.MsgId(_msgid))
+	assert.NoError(t, err, "failed to publish")
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, "hi", received1, "message didnt match")
+	assert.Equal(t, _msgid, msgid1, "msgid didnt match")
+	assert.Equal(t, "hi", received2, "message didnt match")
+	assert.Equal(t, _msgid, msgid2, "msgid didnt match")
+	sub1.Close()
+	sub2.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestQueueConsumerLoadBalanced(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	queue := fmt.Sprintf("queuel%v", time.Now().Unix())
+	subject := queue + ".>"
+	message := queue + ".test"
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{subject},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var received1 string
+	var msgid1 string
+	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		t.Log("1 received:", string(buf), "msgid:", _msgid)
+		received1 = string(buf)
+		msgid1 = _msgid
+		msg.AckSync()
+		return nil
+	}
+	var received2 string
+	var msgid2 string
+	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		t.Log("2 received:", string(buf), "msgid:", _msgid)
+		received2 = string(buf)
+		msgid2 = _msgid
+		msg.AckSync()
+		return nil
+	}
+	sub1, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest1", "qtest", subject, handler1)
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	sub2, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest1", "qtest", subject, handler2)
+	assert.NoError(t, err, "failed to create consumer 2")
+	assert.NotNil(t, sub1, "sub2 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
+	_msgid2 := fmt.Sprintf("b-%v", time.Now().Unix())
+	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
+	assert.NoError(t, err, "failed to publish")
+	_, err = js.Publish(message, []byte(_msgid2), nats.MsgId(_msgid2))
+	assert.NoError(t, err, "failed to publish")
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
+	assert.Equal(t, _msgid2, received2, "message2 didnt match")
+	assert.Equal(t, _msgid2, msgid2, "msgid2 didnt match")
+	sub1.Close()
+	sub2.Close()
 	n.Close()
 	server.Shutdown()
 }
