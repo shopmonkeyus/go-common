@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	gstrings "github.com/shopmonkeyus/go-common/string"
@@ -65,14 +66,20 @@ func (c *consoleLogger) WithPrefix(prefix string) Logger {
 	return l
 }
 
+var isCI = os.Getenv("CI") != ""
+
 func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogger {
 	prefixes := make([]string, 0)
 	prefixes = append(prefixes, c.prefixes...)
+	var tracecolor = Gray
+	if isCI {
+		tracecolor = Purple
+	}
 	return &consoleLogger{
 		metadata:          kv,
 		prefixes:          prefixes,
 		traceLevelColor:   c.Default(c.traceLevelColor, CyanBold),
-		traceMessageColor: c.Default(c.traceMessageColor, Gray),
+		traceMessageColor: c.Default(c.traceMessageColor, tracecolor),
 		debugLevelColor:   c.Default(c.debugLevelColor, BlueBold),
 		debugMessageColor: c.Default(c.debugMessageColor, Green),
 		infoLevelColor:    c.Default(c.infoLevelColor, YellowBold),
