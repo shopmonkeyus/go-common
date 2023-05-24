@@ -5,7 +5,7 @@ go 1.20
 require (
 	cloud.google.com/go/secretmanager v1.10.1
 	github.com/nats-io/nats-server/v2 v2.9.17
-	github.com/nats-io/nats.go v1.25.0
+	github.com/nats-io/nats.go v1.26.0
 	github.com/stretchr/testify v1.8.3
 	golang.org/x/oauth2 v0.8.0
 	google.golang.org/api v0.124.0
@@ -22,7 +22,7 @@ require (
 	github.com/google/s2a-go v0.1.4 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	github.com/googleapis/gax-go/v2 v2.9.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.9.1 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/minio/highwayhash v1.0.2 // indirect
