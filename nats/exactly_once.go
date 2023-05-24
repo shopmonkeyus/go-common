@@ -7,7 +7,7 @@ import (
 	"github.com/shopmonkeyus/go-common/logger"
 )
 
-type ExactlyOnceConsumerConfig struct {
+type exactlyOnceConsumerConfig struct {
 	Context             context.Context
 	Logger              logger.Logger
 	JetStream           nats.JetStreamContext
@@ -18,27 +18,78 @@ type ExactlyOnceConsumerConfig struct {
 	Handler             Handler
 	DeliverPolicy       nats.DeliverPolicy
 	Deliver             nats.SubOpt
-	MaxAckPending       int
+	MaxDeliver          int
 }
 
-// NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
-func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (Subscriber, error) {
-	maxAckPending := 1
-	if config.MaxAckPending > 0 {
-		maxAckPending = config.MaxAckPending
+type ExactlyOnceOptsFunc func(config *exactlyOnceConsumerConfig) error
+
+func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, stream string, durable string, subject string, handler Handler) exactlyOnceConsumerConfig {
+	return exactlyOnceConsumerConfig{
+		Context:             context.Background(),
+		Logger:              logger,
+		JetStream:           js,
+		StreamName:          stream,
+		DurableName:         durable,
+		ConsumerDescription: `exactly once consumer for ${stream}`,
+		FilterSubject:       subject,
+		Handler:             handler,
+		DeliverPolicy:       nats.DeliverNewPolicy,
+		Deliver:             nats.DeliverNew(),
+		MaxDeliver:          1,
 	}
-	deliver := config.Deliver
-	if deliver == nil {
-		deliver = nats.DeliverNew()
+}
+
+// WithExactlyOnceMaxDeliver set the maximum deliver value
+func WithExactlyOnceMaxDeliver(max int) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.MaxDeliver = max
+		return nil
 	}
-	deliverPolicy := config.DeliverPolicy
+}
+
+// WithExactlyOnceDelivery set the internal context
+func WithExactlyOnceDelivery(policy nats.DeliverPolicy) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		switch policy {
+		case nats.DeliverAllPolicy:
+			config.Deliver = nats.DeliverAll()
+		case nats.DeliverLastPolicy:
+			config.Deliver = nats.DeliverLast()
+		case nats.DeliverLastPerSubjectPolicy:
+			config.Deliver = nats.DeliverLastPerSubject()
+		case nats.DeliverNewPolicy:
+			config.Deliver = nats.DeliverNew()
+		}
+		config.DeliverPolicy = policy
+		return nil
+	}
+}
+
+// WithExactlyOnceContext set the internal context
+func WithExactlyOnceContext(context context.Context) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.Context = context
+		return nil
+	}
+}
+
+// WithExactlyOnceConsumerDescription set the consumer description
+func WithExactlyOnceConsumerDescription(description string) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.ConsumerDescription = description
+		return nil
+	}
+}
+
+func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscriber, error) {
 	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 		Durable:       config.DurableName,
 		Description:   config.ConsumerDescription,
 		FilterSubject: config.FilterSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: maxAckPending,
-		DeliverPolicy: deliverPolicy,
+		MaxAckPending: 1,
+		MaxDeliver:    1,
+		DeliverPolicy: config.DeliverPolicy,
 	})
 	if err != nil {
 		return nil, err
@@ -46,11 +97,11 @@ func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (Subscri
 	sub, err := config.JetStream.PullSubscribe(
 		config.FilterSubject,
 		config.DurableName,
-		nats.MaxAckPending(maxAckPending),
+		nats.MaxAckPending(1),
 		nats.ManualAck(),
 		nats.AckExplicit(),
 		nats.Description(config.ConsumerDescription),
-		deliver,
+		config.Deliver,
 	)
 	if err != nil {
 		return nil, err
@@ -65,17 +116,12 @@ func NewExactlyOnceConsumerWithConfig(config ExactlyOnceConsumerConfig) (Subscri
 }
 
 // NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
-func NewExactlyOnceConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, durable string, description string, subject string, handler Handler) (Subscriber, error) {
-	return NewExactlyOnceConsumerWithConfig(ExactlyOnceConsumerConfig{
-		Context:             ctx,
-		Logger:              logger,
-		JetStream:           js,
-		StreamName:          stream,
-		DurableName:         durable,
-		ConsumerDescription: description,
-		FilterSubject:       subject,
-		Handler:             handler,
-		DeliverPolicy:       nats.DeliverNewPolicy,
-		Deliver:             nats.DeliverNew(),
-	})
+func NewExactlyOnceConsumer(logger logger.Logger, js nats.JetStreamContext, stream string, durable string, subject string, handler Handler, opts ...ExactlyOnceOptsFunc) (Subscriber, error) {
+	config := defaultExactlyOnceConfig(logger, js, stream, durable, subject, handler)
+	for _, fn := range opts {
+		if err := fn(&config); err != nil {
+			return nil, err
+		}
+	}
+	return newExactlyOnceConsumerWithConfig(config)
 }
