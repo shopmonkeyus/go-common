@@ -3,10 +3,12 @@ package director
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -134,9 +136,15 @@ func defaultDirectorOpts() directorRegistrationOpts {
 	if region == "" {
 		region = "dev"
 	}
+	// create an offset from 50 so that we get a range between 50-58m on registration timeframe
+	// this makes sure that if N pods all start at the same time that they won't all attempt to
+	// re-register at the exact same time (thundering herd). it also ensures that the registration
+	// will be less than the expiration of 60m
+	v, _ := rand.Int(rand.Reader, big.NewInt(8))
+	add := time.Minute * time.Duration(v.Int64())
 	return directorRegistrationOpts{
 		url:      "https://api.shopmonkey.cloud",
-		interval: time.Minute * 50,
+		interval: time.Minute*50 + add,
 		region:   region,
 	}
 }
