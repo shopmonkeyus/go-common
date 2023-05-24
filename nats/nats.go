@@ -80,10 +80,10 @@ func (s *subscriber) Close() error {
 	s.lock.Lock()
 	s.shutdown = true
 	s.lock.Unlock()
-	s.cancel()
-	s.wg.Wait()
-	s.sub.Unsubscribe()
-	s.sub.Drain()
+	s.cancel()          // signal a blocking fetch to wake up
+	s.sub.Unsubscribe() // unsubscribe so we don't get more messages
+	s.wg.Wait()         // wait for us to nack all pending messages if any
+	s.sub.Drain()       // close up shop
 	s.logger.Debug("subscriber closed")
 	return nil
 }
