@@ -81,9 +81,9 @@ func (s *subscriber) Close() error {
 	s.shutdown = true
 	s.lock.Unlock()
 	s.cancel()
+	s.wg.Wait()
 	s.sub.Unsubscribe()
 	s.sub.Drain()
-	s.wg.Wait()
 	s.logger.Debug("subscriber closed")
 	return nil
 }
@@ -160,6 +160,15 @@ func (s *subscriber) run() {
 			continue
 		}
 		for _, msg := range msgs {
+			// check through each message we process to make sure we're not in a shutdown
+			// and if so, nack the message to allow another
+			s.lock.Lock()
+			if s.shutdown {
+				msg.Nak()
+				s.lock.Unlock()
+				continue // keep going so that we nack all the messages
+			}
+			s.lock.Unlock()
 			msgid := msg.Header.Get("Nats-Msg-Id")
 			if msgid == "" {
 				msgid = gstring.SHA256(msg.Data)
@@ -207,10 +216,10 @@ func (s *subscriber) run() {
 			// now do cleanup
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
-					s.logger.Warn("nack message: (%v/%d) [canceled]", msgid, md.Sequence.Consumer)
+					s.logger.Warn("nack message %s: (%v/%d) [canceled]", msg.Subject, msgid, md.Sequence.Consumer)
 					msg.Nak()
 				} else {
-					s.logger.Error("error handling message (%s/%d). %s", msgid, md.Sequence.Consumer, err)
+					s.logger.Error("error handling message %s: (%s/%d). %s", msg.Subject, msgid, md.Sequence.Consumer, err)
 					msg.AckSync()
 				}
 			}
