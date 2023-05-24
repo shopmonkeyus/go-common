@@ -272,3 +272,46 @@ func TestEphemeralConsumer(t *testing.T) {
 	n.Close()
 	server.Shutdown()
 }
+
+func TestEphemeralConsumerAutoExtend(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewConsoleLogger()
+	queue := fmt.Sprintf("aephem%v", time.Now().Unix())
+	subject := queue + ".>"
+	message := queue + ".test"
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{subject},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var received string
+	var msgid string
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		log.Info("received: %s, msgid: %s", string(buf), _msgid)
+		time.Sleep(time.Second * 5) // block to force the extender to run
+		received = string(buf)
+		msgid = _msgid
+		msg.AckSync()
+		return nil
+	}
+	sub1, err := NewEphemeralConsumer(log, js, queue, subject, handler, WithEphemeralAckWait(time.Second*2))
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
+	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
+	assert.NoError(t, err, "failed to publish")
+	time.Sleep(time.Second * 6)
+	assert.Equal(t, _msgid1, received, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid, "msgid1 didnt match")
+	sub1.Close()
+	n.Close()
+	server.Shutdown()
+}

@@ -117,10 +117,11 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 		return nil, err
 	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:     config.Context,
-		logger:  config.Logger,
-		sub:     sub,
-		handler: config.Handler,
+		ctx:      config.Context,
+		logger:   config.Logger,
+		sub:      sub,
+		handler:  config.Handler,
+		maxfetch: config.MaxDeliver,
 	})
 	return eos, nil
 }
