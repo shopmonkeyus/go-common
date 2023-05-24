@@ -7,7 +7,7 @@ import (
 	"github.com/shopmonkeyus/go-common/logger"
 )
 
-type EphemeralConsumerConfig struct {
+type ephemeralConsumerConfig struct {
 	Context             context.Context
 	Logger              logger.Logger
 	JetStream           nats.JetStreamContext
@@ -17,35 +17,98 @@ type EphemeralConsumerConfig struct {
 	Handler             Handler
 	DeliverPolicy       nats.DeliverPolicy
 	Deliver             nats.SubOpt
+	MaxDeliver          int
+	MaxAckPending       int
 }
 
-// NewEphemeralConsumerWithConfig will create (or reuse) ephemeral consumer
-func NewEphemeralConsumerWithConfig(config EphemeralConsumerConfig) (Subscriber, error) {
-	maxAckPending := 1000
-	deliver := config.Deliver
-	if deliver == nil {
-		deliver = nats.DeliverNew()
+type EphemeralOptsFunc func(config *ephemeralConsumerConfig) error
+
+func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stream string, subject string, handler Handler) ephemeralConsumerConfig {
+	return ephemeralConsumerConfig{
+		Context:             context.Background(),
+		Logger:              logger,
+		JetStream:           js,
+		StreamName:          stream,
+		ConsumerDescription: `ephemeral consumer for ${stream}`,
+		FilterSubject:       subject,
+		Handler:             handler,
+		DeliverPolicy:       nats.DeliverNewPolicy,
+		Deliver:             nats.DeliverNew(),
+		MaxDeliver:          1,
+		MaxAckPending:       1000,
 	}
-	deliverPolicy := config.DeliverPolicy
+}
+
+// WithEphemeralMaxDeliver set the maximum deliver value
+func WithEphemeralMaxDeliver(max int) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.MaxDeliver = max
+		return nil
+	}
+}
+
+// WithEphemeralMaxAckPending set the maximum ack pending value
+func WithEphemeralMaxAckPending(max int) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.MaxAckPending = max
+		return nil
+	}
+}
+
+// WithEphemeralDelivery set the internal context
+func WithEphemeralDelivery(policy nats.DeliverPolicy) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		switch policy {
+		case nats.DeliverAllPolicy:
+			config.Deliver = nats.DeliverAll()
+		case nats.DeliverLastPolicy:
+			config.Deliver = nats.DeliverLast()
+		case nats.DeliverLastPerSubjectPolicy:
+			config.Deliver = nats.DeliverLastPerSubject()
+		case nats.DeliverNewPolicy:
+			config.Deliver = nats.DeliverNew()
+		}
+		config.DeliverPolicy = policy
+		return nil
+	}
+}
+
+// WithEphemeralContext set the internal context
+func WithEphemeralContext(context context.Context) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.Context = context
+		return nil
+	}
+}
+
+// WithEphemeralConsumerDescription set the consumer description
+func WithEphemeralConsumerDescription(description string) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.ConsumerDescription = description
+		return nil
+	}
+}
+
+func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber, error) {
 	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 		Description:   config.ConsumerDescription,
 		FilterSubject: config.FilterSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: maxAckPending,
-		DeliverPolicy: deliverPolicy,
-		MaxDeliver:    1,
+		MaxAckPending: config.MaxAckPending,
+		DeliverPolicy: config.DeliverPolicy,
+		MaxDeliver:    config.MaxDeliver,
 	})
 	if err != nil {
 		return nil, err
 	}
 	sub, err := config.JetStream.PullSubscribe(
 		config.FilterSubject,
-		"",
-		nats.MaxAckPending(maxAckPending),
+		"", // ephemeral durable must be set to empty string to make it ephemeral
+		nats.MaxAckPending(config.MaxAckPending),
 		nats.ManualAck(),
 		nats.AckExplicit(),
 		nats.Description(config.ConsumerDescription),
-		deliver,
+		config.Deliver,
 	)
 	if err != nil {
 		return nil, err
@@ -59,32 +122,13 @@ func NewEphemeralConsumerWithConfig(config EphemeralConsumerConfig) (Subscriber,
 	return eos, nil
 }
 
-// NewEphemeralConsumerDeliverAll will create (or reuse) an ephemeral consumer with default config which will deliver all messages (not just new ones)
-func NewEphemeralConsumerDeliverAll(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, description string, subject string, handler Handler) (Subscriber, error) {
-	return NewEphemeralConsumerWithConfig(EphemeralConsumerConfig{
-		Context:             ctx,
-		Logger:              logger,
-		JetStream:           js,
-		StreamName:          stream,
-		ConsumerDescription: description,
-		FilterSubject:       subject,
-		Handler:             handler,
-		DeliverPolicy:       nats.DeliverAllPolicy,
-		Deliver:             nats.DeliverAll(),
-	})
-}
-
-// NewEphemeralConsumer will create (or reuse) an ephemeral consumer with default config
-func NewEphemeralConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, description string, subject string, handler Handler) (Subscriber, error) {
-	return NewEphemeralConsumerWithConfig(EphemeralConsumerConfig{
-		Context:             ctx,
-		Logger:              logger,
-		JetStream:           js,
-		StreamName:          stream,
-		ConsumerDescription: description,
-		FilterSubject:       subject,
-		Handler:             handler,
-		DeliverPolicy:       nats.DeliverNewPolicy,
-		Deliver:             nats.DeliverNew(),
-	})
+// NewEphemeralConsumer will create (or reuse) an ephemeral consumer
+func NewEphemeralConsumer(logger logger.Logger, js nats.JetStreamContext, stream string, subject string, handler Handler, opts ...EphemeralOptsFunc) (Subscriber, error) {
+	config := defaultEphemeralConfig(logger, js, stream, subject, handler)
+	for _, fn := range opts {
+		if err := fn(&config); err != nil {
+			return nil, err
+		}
+	}
+	return newEphemeralConsumerWithConfig(config)
 }

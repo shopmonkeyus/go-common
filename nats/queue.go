@@ -7,7 +7,7 @@ import (
 	"github.com/shopmonkeyus/go-common/logger"
 )
 
-type QueueConsumerConfig struct {
+type queueConsumerConfig struct {
 	Context             context.Context
 	Logger              logger.Logger
 	JetStream           nats.JetStreamContext
@@ -18,24 +18,88 @@ type QueueConsumerConfig struct {
 	Handler             Handler
 	DeliverPolicy       nats.DeliverPolicy
 	Deliver             nats.SubOpt
+	MaxAckPending       int
+	MaxDeliver          int
 }
 
-// NewQueueConsumerWithConfig will create (or reuse) queue consumer
-func NewQueueConsumerWithConfig(config QueueConsumerConfig) (Subscriber, error) {
-	maxAckPending := 1000
-	deliver := config.Deliver
-	if deliver == nil {
-		deliver = nats.DeliverNew()
+type QueueOptsFunc func(config *queueConsumerConfig) error
+
+func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream string, durable string, subject string, handler Handler) queueConsumerConfig {
+	return queueConsumerConfig{
+		Context:             context.Background(),
+		Logger:              logger,
+		JetStream:           js,
+		StreamName:          stream,
+		DurableName:         durable,
+		ConsumerDescription: `queue consumer for ${stream}`,
+		FilterSubject:       subject,
+		Handler:             handler,
+		DeliverPolicy:       nats.DeliverNewPolicy,
+		Deliver:             nats.DeliverNew(),
+		MaxDeliver:          1,
+		MaxAckPending:       1000,
 	}
-	deliverPolicy := config.DeliverPolicy
+}
+
+// WithQueueMaxDeliver set the maximum deliver value
+func WithQueueMaxDeliver(max int) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.MaxDeliver = max
+		return nil
+	}
+}
+
+// WithQueueMaxAckPending set the maximum ack pending value
+func WithQueueMaxAckPending(max int) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.MaxAckPending = max
+		return nil
+	}
+}
+
+// WithQueueDelivery set the internal context
+func WithQueueDelivery(policy nats.DeliverPolicy) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		switch policy {
+		case nats.DeliverAllPolicy:
+			config.Deliver = nats.DeliverAll()
+		case nats.DeliverLastPolicy:
+			config.Deliver = nats.DeliverLast()
+		case nats.DeliverLastPerSubjectPolicy:
+			config.Deliver = nats.DeliverLastPerSubject()
+		case nats.DeliverNewPolicy:
+			config.Deliver = nats.DeliverNew()
+		}
+		config.DeliverPolicy = policy
+		return nil
+	}
+}
+
+// WithQueueContext set the internal context
+func WithQueueContext(context context.Context) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.Context = context
+		return nil
+	}
+}
+
+// WithQueueConsumerDescription set the consumer description
+func WithQueueConsumerDescription(description string) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.ConsumerDescription = description
+		return nil
+	}
+}
+
+func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) {
 	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 		Durable:       config.DurableName,
 		Description:   config.ConsumerDescription,
 		FilterSubject: config.FilterSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: maxAckPending,
-		DeliverPolicy: deliverPolicy,
-		MaxDeliver:    1,
+		MaxAckPending: config.MaxAckPending,
+		DeliverPolicy: config.DeliverPolicy,
+		MaxDeliver:    config.MaxDeliver,
 	})
 	if err != nil {
 		return nil, err
@@ -43,11 +107,11 @@ func NewQueueConsumerWithConfig(config QueueConsumerConfig) (Subscriber, error) 
 	sub, err := config.JetStream.PullSubscribe(
 		config.FilterSubject,
 		config.DurableName,
-		nats.MaxAckPending(maxAckPending),
+		nats.MaxAckPending(config.MaxAckPending),
 		nats.ManualAck(),
 		nats.AckExplicit(),
 		nats.Description(config.ConsumerDescription),
-		deliver,
+		config.Deliver,
 	)
 	if err != nil {
 		return nil, err
@@ -62,17 +126,12 @@ func NewQueueConsumerWithConfig(config QueueConsumerConfig) (Subscriber, error) 
 }
 
 // NewQueueConsumer will create (or reuse) a queue consumer with default config
-func NewQueueConsumer(ctx context.Context, logger logger.Logger, js nats.JetStreamContext, stream string, durable string, description string, subject string, handler Handler) (Subscriber, error) {
-	return NewQueueConsumerWithConfig(QueueConsumerConfig{
-		Context:             ctx,
-		Logger:              logger,
-		JetStream:           js,
-		StreamName:          stream,
-		DurableName:         durable,
-		ConsumerDescription: description,
-		FilterSubject:       subject,
-		Handler:             handler,
-		DeliverPolicy:       nats.DeliverNewPolicy,
-		Deliver:             nats.DeliverNew(),
-	})
+func NewQueueConsumer(logger logger.Logger, js nats.JetStreamContext, stream string, durable string, subject string, handler Handler, opts ...QueueOptsFunc) (Subscriber, error) {
+	config := defaultQueueConfig(logger, js, stream, durable, subject, handler)
+	for _, fn := range opts {
+		if err := fn(&config); err != nil {
+			return nil, err
+		}
+	}
+	return newQueueConsumerWithConfig(config)
 }

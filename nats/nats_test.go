@@ -81,7 +81,7 @@ func TestExactlyOnceConsumer(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub, err := NewExactlyOnceConsumer(context.TODO(), log, js, queue, "test", "test", queue+".*", handler)
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test", queue+".*", handler)
 	assert.NoError(t, err, "failed to create consumer")
 	assert.NotNil(t, sub, "sub result was nil")
 	_msgid := fmt.Sprintf("%v", time.Now().Unix())
@@ -132,10 +132,10 @@ func TestQueueConsumer(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub1, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest1", "qtest", queue+".*", handler1)
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", queue+".*", handler1)
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
-	sub2, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest2", "qtest", queue+".*", handler2)
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest2", queue+".*", handler2)
 	assert.NoError(t, err, "failed to create consumer 2")
 	assert.NotNil(t, sub1, "sub2 result was nil")
 	_msgid := fmt.Sprintf("%v", time.Now().Unix())
@@ -190,10 +190,10 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub1, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest1", "qtest", subject, handler1)
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler1)
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
-	sub2, err := NewQueueConsumer(context.TODO(), log, js, queue, "qtest1", "qtest", subject, handler2)
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler2)
 	assert.NoError(t, err, "failed to create consumer 2")
 	assert.NotNil(t, sub1, "sub2 result was nil")
 	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
@@ -241,7 +241,7 @@ func TestEphemeralConsumer(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub1, err := NewEphemeralConsumer(context.TODO(), log, js, queue, "etest", subject, handler1)
+	sub1, err := NewEphemeralConsumer(log, js, queue, subject, handler1)
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
 	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
@@ -253,17 +253,7 @@ func TestEphemeralConsumer(t *testing.T) {
 	sub1.Close()
 	received1 = ""
 	msgid1 = ""
-	sub2, err := NewEphemeralConsumerWithConfig(EphemeralConsumerConfig{
-		Context:             context.TODO(),
-		Logger:              log,
-		JetStream:           js,
-		StreamName:          queue,
-		ConsumerDescription: "",
-		FilterSubject:       subject,
-		Handler:             handler1,
-		DeliverPolicy:       nats.DeliverAllPolicy,
-		Deliver:             nats.DeliverAll(),
-	})
+	sub2, err := NewEphemeralConsumer(log, js, queue, subject, handler1, WithEphemeralDelivery(nats.DeliverAllPolicy))
 	assert.NoError(t, err, "failed to create consumer 2")
 	assert.NotNil(t, sub2, "sub2 result was nil")
 	time.Sleep(time.Millisecond * 100)
@@ -272,7 +262,7 @@ func TestEphemeralConsumer(t *testing.T) {
 	sub2.Close()
 	received1 = ""
 	msgid1 = ""
-	sub3, err := NewEphemeralConsumerDeliverAll(context.TODO(), log, js, queue, "etest", subject, handler1)
+	sub3, err := NewEphemeralConsumer(log, js, queue, subject, handler1, WithEphemeralDelivery(nats.DeliverAllPolicy))
 	assert.NoError(t, err, "failed to create consumer 3")
 	assert.NotNil(t, sub3, "sub3 result was nil")
 	time.Sleep(time.Millisecond * 100)
