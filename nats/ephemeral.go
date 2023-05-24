@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
@@ -19,6 +20,7 @@ type ephemeralConsumerConfig struct {
 	Deliver             nats.SubOpt
 	MaxDeliver          int
 	MaxAckPending       int
+	AckWait             time.Duration
 }
 
 type EphemeralOptsFunc func(config *ephemeralConsumerConfig) error
@@ -36,6 +38,7 @@ func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stre
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
+		AckWait:             time.Second * 30,
 	}
 }
 
@@ -89,6 +92,14 @@ func WithEphemeralConsumerDescription(description string) EphemeralOptsFunc {
 	}
 }
 
+// WithEphemeralAckWait overrides the default ack wait of 30s
+func WithEphemeralAckWait(duration time.Duration) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.AckWait = duration
+		return nil
+	}
+}
+
 func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber, error) {
 	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 		Description:   config.ConsumerDescription,
@@ -97,6 +108,7 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 		MaxAckPending: config.MaxAckPending,
 		DeliverPolicy: config.DeliverPolicy,
 		MaxDeliver:    config.MaxDeliver,
+		AckWait:       config.AckWait,
 	})
 	if err != nil {
 		return nil, err
@@ -114,10 +126,12 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 		return nil, err
 	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:     config.Context,
-		logger:  config.Logger,
-		sub:     sub,
-		handler: config.Handler,
+		ctx:            config.Context,
+		logger:         config.Logger,
+		sub:            sub,
+		handler:        config.Handler,
+		maxfetch:       config.MaxDeliver,
+		extendInterval: config.AckWait,
 	})
 	return eos, nil
 }

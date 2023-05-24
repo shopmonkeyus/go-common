@@ -24,34 +24,52 @@ type Subscriber interface {
 }
 
 type subscriber struct {
-	logger   logger.Logger
-	sub      *nats.Subscription
-	handler  Handler
-	shutdown bool
-	lock     sync.Mutex
-	wg       sync.WaitGroup
-	ctx      context.Context
-	cancel   context.CancelFunc
+	logger          logger.Logger
+	sub             *nats.Subscription
+	handler         Handler
+	shutdown        bool
+	lock            sync.Mutex
+	wg              sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
+	inflight        *nats.Msg
+	inflightSeq     uint64
+	inflightMsgid   string
+	inflightStarted *time.Time
+	ackLock         sync.Mutex
+	extendInterval  time.Duration
+	maxfetch        int
 }
 
 type subscriberOpts struct {
-	ctx     context.Context
-	logger  logger.Logger
-	sub     *nats.Subscription
-	handler Handler
+	ctx            context.Context
+	logger         logger.Logger
+	sub            *nats.Subscription
+	handler        Handler
+	extendInterval time.Duration
+	maxfetch       int
 }
 
 var _ Subscriber = (*subscriber)(nil)
 
 func newSubscriber(opts subscriberOpts) *subscriber {
 	_ctx, cancel := context.WithCancel(opts.ctx)
-	sub := &subscriber{
-		logger:  opts.logger,
-		sub:     opts.sub,
-		handler: opts.handler,
-		ctx:     _ctx,
-		cancel:  cancel,
+	if opts.extendInterval.Nanoseconds() == 0 {
+		opts.extendInterval = time.Second * 28
 	}
+	if opts.maxfetch <= 0 {
+		opts.maxfetch = 1
+	}
+	sub := &subscriber{
+		logger:         opts.logger,
+		sub:            opts.sub,
+		handler:        opts.handler,
+		ctx:            _ctx,
+		cancel:         cancel,
+		extendInterval: opts.extendInterval,
+		maxfetch:       opts.maxfetch,
+	}
+	go sub.extender()
 	go sub.run()
 	return sub
 }
@@ -70,10 +88,43 @@ func (s *subscriber) Close() error {
 	return nil
 }
 
+func (s *subscriber) extender() {
+	s.wg.Add(1)
+	t := time.NewTicker(s.extendInterval)
+	defer func() {
+		t.Stop()
+		s.wg.Done()
+	}()
+	for {
+		select {
+		case <-s.ctx.Done():
+			s.ackLock.Lock()
+			if s.inflight != nil {
+				s.logger.Info("nack message %s (%v/%d) [canceled]", s.inflight.Subject, s.inflightMsgid, s.inflightSeq)
+				s.inflight.Nak()
+				s.inflight = nil
+				s.inflightStarted = nil
+				s.inflightMsgid = ""
+				s.inflightSeq = 0
+			}
+			s.ackLock.Unlock()
+			return
+		case <-t.C:
+			s.ackLock.Lock()
+			if s.inflight != nil {
+				s.logger.Debug("extending %s ack timeout (%s/%d) running %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, time.Since(*s.inflightStarted))
+				if err := s.inflight.InProgress(); err != nil {
+					s.logger.Error("error extending in progress %s (%s/%d): %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, err)
+				}
+			}
+			s.ackLock.Unlock()
+		}
+	}
+}
+
 func (s *subscriber) run() {
 	s.wg.Add(1)
 	defer s.wg.Done()
-	var ackLock sync.Mutex
 	for {
 		s.lock.Lock()
 		shutdown := s.shutdown
@@ -82,7 +133,7 @@ func (s *subscriber) run() {
 			return
 		}
 		c, cf := context.WithTimeout(s.ctx, time.Minute)
-		msgs, err := s.sub.Fetch(1, nats.Context(c))
+		msgs, err := s.sub.Fetch(s.maxfetch, nats.Context(c))
 		cf()
 		if err != nil {
 			s.lock.Lock()
@@ -95,8 +146,13 @@ func (s *subscriber) run() {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
+			// this is normal and we should continue to fetch more messages
+			if errors.Is(err, context.DeadlineExceeded) {
+				time.Sleep(time.Microsecond * 10)
+				continue
+			}
 			errMsg := err.Error()
-			if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline exceeded") || strings.Contains(errMsg, "connection closed") {
+			if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "connection closed") {
 				continue
 			}
 			s.logger.Error("subscription fetch error: %s", errMsg)
@@ -110,11 +166,11 @@ func (s *subscriber) run() {
 			}
 			md, _ := msg.Metadata()
 			if md.NumDelivered > maxDeliveryAttempts {
-				s.logger.Info("terminating msg: %v (%s/%v) after %d delivery attempts", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
+				s.logger.Warn("terminating msg: %v (%s/%v) after %d delivery attempts", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
 				msg.Term() // no longer allow it to be reprocessed
 				continue
 			}
-			s.logger.Info("processing msg: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
+			s.logger.Debug("processing message: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
 			encoding := msg.Header.Get("content-encoding")
 			gzipped := encoding == "gzip/json"
 			started := time.Now()
@@ -124,58 +180,40 @@ func (s *subscriber) run() {
 				data, err = compress.Gunzip(data)
 			}
 			if err != nil {
-				s.logger.Error("error uncompressing message (%s/%d). %s", msgid, md.Sequence.Consumer, err)
+				s.logger.Error("error uncompressing message: %v (%s/%d). %s", msg.Subject, msgid, md.Sequence.Consumer, err)
 				msg.AckSync()
 				continue
 			}
-			// while we're still running, let the server know if we're in progress
-			ctx, done := context.WithCancel(s.ctx)
-			var ok bool
-			go func() {
-				for {
-					select {
-					case <-ctx.Done():
-						ackLock.Lock()
-						_ok := ok
-						ackLock.Unlock()
-						if !_ok {
-							s.logger.Info("nack message: (%v/%d) [canceled]", msgid, md.Sequence.Consumer)
-							msg.Nak()
-						}
-						done()
-						return
-					case <-time.After(time.Second * 28):
-						s.logger.Debug("extending ack timeout (%s/%d) running %v", msgid, md.Sequence.Consumer, time.Since(started))
-						msg.InProgress()
-					}
+
+			// record our inflight message
+			s.ackLock.Lock()
+			s.inflight = msg
+			s.inflightMsgid = msgid
+			s.inflightSeq = md.Sequence.Consumer
+			s.inflightStarted = &started
+			s.ackLock.Unlock()
+
+			// run our callback handler
+			err = s.handler(s.ctx, data, msg)
+
+			// make sure we untrack the inflight state so that the extender knows we're idle
+			s.ackLock.Lock()
+			s.inflight = nil
+			s.inflightMsgid = ""
+			s.inflightSeq = 0
+			s.inflightStarted = nil
+			s.ackLock.Unlock()
+
+			// now do cleanup
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					s.logger.Warn("nack message: (%v/%d) [canceled]", msgid, md.Sequence.Consumer)
+					msg.Nak()
+				} else {
+					s.logger.Error("error handling message (%s/%d). %s", msgid, md.Sequence.Consumer, err)
+					msg.AckSync()
 				}
-			}()
-			// we need to block waiting for the handler to finish but we do it in its
-			// own go routine so that we can more easily cancel
-			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if err := s.handler(ctx, data, msg); err != nil {
-					ackLock.Lock()
-					ok = true
-					ackLock.Unlock()
-					if errors.Is(err, context.Canceled) {
-						s.logger.Info("nack message: (%v/%d) [canceled]", msgid, md.Sequence.Consumer)
-						msg.Nak()
-					} else {
-						s.logger.Error("error handling message (%s/%d). %s", msgid, md.Sequence.Consumer, err)
-						msg.AckSync()
-					}
-					done()
-					return
-				}
-				ackLock.Lock()
-				ok = true
-				ackLock.Unlock()
-			}()
-			wg.Wait()
-			done()
+			}
 		}
 	}
 }

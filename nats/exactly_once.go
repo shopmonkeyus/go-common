@@ -107,10 +107,11 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 		return nil, err
 	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:     config.Context,
-		logger:  config.Logger,
-		sub:     sub,
-		handler: config.Handler,
+		ctx:      config.Context,
+		logger:   config.Logger,
+		sub:      sub,
+		handler:  config.Handler,
+		maxfetch: 1,
 	})
 	return eos, nil
 }
