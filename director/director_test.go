@@ -78,6 +78,7 @@ func TestRegistration(t *testing.T) {
 		withTimestamp(testTime),
 		WithInterval(time.Second),
 		WithAuthorization("1234"),
+		WithRegion(""), // test that it's not set if empty
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "1234", director.auth)

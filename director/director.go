@@ -151,7 +151,9 @@ func defaultDirectorOpts() directorRegistrationOpts {
 
 func withTimestamp(tv time.Time) DirectorOptsFunc {
 	return func(config *directorRegistrationOpts) error {
-		config.timestamp = tv
+		if !tv.IsZero() {
+			config.timestamp = tv
+		}
 		return nil
 	}
 }
@@ -159,7 +161,9 @@ func withTimestamp(tv time.Time) DirectorOptsFunc {
 // WithURL will allow the director url to be overriden from the default value
 func WithURL(url string) DirectorOptsFunc {
 	return func(config *directorRegistrationOpts) error {
-		config.url = url
+		if url != "" {
+			config.url = url
+		}
 		return nil
 	}
 }
@@ -175,7 +179,9 @@ func WithInterval(interval time.Duration) DirectorOptsFunc {
 // WithRegion will change the region
 func WithRegion(region string) DirectorOptsFunc {
 	return func(config *directorRegistrationOpts) error {
-		config.region = region
+		if region != "" {
+			config.region = region
+		}
 		return nil
 	}
 }
@@ -183,7 +189,9 @@ func WithRegion(region string) DirectorOptsFunc {
 // WithAuthorization will set the authorization
 func WithAuthorization(authorization string) DirectorOptsFunc {
 	return func(config *directorRegistrationOpts) error {
-		config.authorization = authorization
+		if authorization != "" {
+			config.authorization = authorization
+		}
 		return nil
 	}
 }
