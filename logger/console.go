@@ -125,7 +125,11 @@ func (c *consoleLogger) Log(levelColor string, messageColor string, levelString 
 		buf, _ := json.Marshal(c.metadata)
 		_buf := string(buf)
 		if _buf != "{}" {
-			suffix = " " + Gray + _buf + Reset
+			if isCI {
+				suffix = " " + MagentaBold + _buf + Reset
+			} else {
+				suffix = " " + Gray + _buf + Reset
+			}
 		}
 	}
 	var levelSuffix string
