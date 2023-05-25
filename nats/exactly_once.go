@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
@@ -30,7 +31,7 @@ func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, st
 		JetStream:           js,
 		StreamName:          stream,
 		DurableName:         durable,
-		ConsumerDescription: `exactly once consumer for ${stream}`,
+		ConsumerDescription: fmt.Sprintf("exactly once consumer for %s", stream),
 		FilterSubject:       subject,
 		Handler:             handler,
 		DeliverPolicy:       nats.DeliverNewPolicy,
@@ -82,17 +83,19 @@ func WithExactlyOnceConsumerDescription(description string) ExactlyOnceOptsFunc 
 }
 
 func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscriber, error) {
-	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
-		Durable:       config.DurableName,
-		Description:   config.ConsumerDescription,
-		FilterSubject: config.FilterSubject,
-		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: 1,
-		MaxDeliver:    1,
-		DeliverPolicy: config.DeliverPolicy,
-	})
-	if err != nil {
-		return nil, err
+	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.StreamName)
+	if ci == nil {
+		if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
+			Durable:       config.DurableName,
+			Description:   config.ConsumerDescription,
+			FilterSubject: config.FilterSubject,
+			AckPolicy:     nats.AckExplicitPolicy,
+			MaxAckPending: 1,
+			MaxDeliver:    1,
+			DeliverPolicy: config.DeliverPolicy,
+		}); err != nil {
+			return nil, err
+		}
 	}
 	sub, err := config.JetStream.PullSubscribe(
 		config.FilterSubject,

@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -31,7 +32,7 @@ func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stre
 		Logger:              logger,
 		JetStream:           js,
 		StreamName:          stream,
-		ConsumerDescription: `ephemeral consumer for ${stream}`,
+		ConsumerDescription: fmt.Sprintf("ephemeral consumer for %s", stream),
 		FilterSubject:       subject,
 		Handler:             handler,
 		DeliverPolicy:       nats.DeliverNewPolicy,
@@ -101,16 +102,16 @@ func WithEphemeralAckWait(duration time.Duration) EphemeralOptsFunc {
 }
 
 func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber, error) {
-	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
+	if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 		Description:   config.ConsumerDescription,
+		Durable:       "",
 		FilterSubject: config.FilterSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
 		MaxAckPending: config.MaxAckPending,
 		DeliverPolicy: config.DeliverPolicy,
 		MaxDeliver:    config.MaxDeliver,
 		AckWait:       config.AckWait,
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 	sub, err := config.JetStream.PullSubscribe(

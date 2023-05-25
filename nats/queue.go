@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
@@ -31,7 +32,7 @@ func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream s
 		JetStream:           js,
 		StreamName:          stream,
 		DurableName:         durable,
-		ConsumerDescription: `queue consumer for ${stream}`,
+		ConsumerDescription: fmt.Sprintf("queue consumer for %s", stream),
 		FilterSubject:       subject,
 		Handler:             handler,
 		DeliverPolicy:       nats.DeliverNewPolicy,
@@ -92,17 +93,19 @@ func WithQueueConsumerDescription(description string) QueueOptsFunc {
 }
 
 func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) {
-	_, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
-		Durable:       config.DurableName,
-		Description:   config.ConsumerDescription,
-		FilterSubject: config.FilterSubject,
-		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: config.MaxAckPending,
-		DeliverPolicy: config.DeliverPolicy,
-		MaxDeliver:    config.MaxDeliver,
-	})
-	if err != nil {
-		return nil, err
+	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.StreamName)
+	if ci == nil {
+		if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
+			Durable:       config.DurableName,
+			Description:   config.ConsumerDescription,
+			FilterSubject: config.FilterSubject,
+			AckPolicy:     nats.AckExplicitPolicy,
+			MaxAckPending: config.MaxAckPending,
+			DeliverPolicy: config.DeliverPolicy,
+			MaxDeliver:    config.MaxDeliver,
+		}); err != nil {
+			return nil, err
+		}
 	}
 	sub, err := config.JetStream.PullSubscribe(
 		config.FilterSubject,
