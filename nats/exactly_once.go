@@ -116,7 +116,7 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 	}
 	if ci != nil {
 		if !diffConfig(ci.Config, *cconfig) {
-			config.Logger.Warn("consumer %s for stream %s has a configuration mismatch and must be updated")
+			config.Logger.Warn("consumer %s for stream %s has a configuration mismatch and must be updated", config.DurableName, config.StreamName)
 			if _, err := config.JetStream.UpdateConsumer(config.StreamName, cconfig); err != nil {
 				return nil, err
 			}
