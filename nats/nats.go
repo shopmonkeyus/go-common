@@ -1,7 +1,9 @@
 package nats
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -229,4 +231,10 @@ func (s *subscriber) run() {
 
 func isConsumerNameAlreadyExistsError(err error) bool {
 	return strings.Contains(err.Error(), "consumer name already in use")
+}
+
+func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) bool {
+	b1, _ := json.Marshal(a)
+	b2, _ := json.Marshal(b)
+	return bytes.EqualFold(b1, b2)
 }
