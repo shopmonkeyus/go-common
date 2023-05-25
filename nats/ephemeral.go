@@ -102,19 +102,17 @@ func WithEphemeralAckWait(duration time.Duration) EphemeralOptsFunc {
 }
 
 func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber, error) {
-	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.StreamName)
-	if ci == nil {
-		if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
-			Description:   config.ConsumerDescription,
-			FilterSubject: config.FilterSubject,
-			AckPolicy:     nats.AckExplicitPolicy,
-			MaxAckPending: config.MaxAckPending,
-			DeliverPolicy: config.DeliverPolicy,
-			MaxDeliver:    config.MaxDeliver,
-			AckWait:       config.AckWait,
-		}); err != nil {
-			return nil, err
-		}
+	if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
+		Description:   config.ConsumerDescription,
+		Durable:       "",
+		FilterSubject: config.FilterSubject,
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxAckPending: config.MaxAckPending,
+		DeliverPolicy: config.DeliverPolicy,
+		MaxDeliver:    config.MaxDeliver,
+		AckWait:       config.AckWait,
+	}); err != nil {
+		return nil, err
 	}
 	sub, err := config.JetStream.PullSubscribe(
 		config.FilterSubject,
