@@ -103,18 +103,27 @@ func WithQueueConsumerDescription(description string) QueueOptsFunc {
 }
 
 func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) {
-	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.StreamName)
+	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.DurableName)
+	cconfig := &nats.ConsumerConfig{
+		Durable:       config.DurableName,
+		Description:   config.ConsumerDescription,
+		FilterSubject: config.FilterSubject,
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxAckPending: config.MaxAckPending,
+		DeliverPolicy: config.DeliverPolicy,
+		MaxDeliver:    config.MaxDeliver,
+		Replicas:      config.Replicas,
+	}
+	if ci != nil {
+		if !diffConfig(ci.Config, *cconfig) {
+			config.Logger.Warn("consumer %s for stream %s has a configuration mismatch and must be updated")
+			if _, err := config.JetStream.UpdateConsumer(config.StreamName, cconfig); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if ci == nil {
-		if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
-			Durable:       config.DurableName,
-			Description:   config.ConsumerDescription,
-			FilterSubject: config.FilterSubject,
-			AckPolicy:     nats.AckExplicitPolicy,
-			MaxAckPending: config.MaxAckPending,
-			DeliverPolicy: config.DeliverPolicy,
-			MaxDeliver:    config.MaxDeliver,
-			Replicas:      config.Replicas,
-		}); err != nil && !isConsumerNameAlreadyExistsError(err) {
+		if _, err := config.JetStream.AddConsumer(config.StreamName, cconfig); err != nil && !isConsumerNameAlreadyExistsError(err) {
 			return nil, err
 		}
 	}

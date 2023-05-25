@@ -93,19 +93,28 @@ func WithExactlyOnceConsumerDescription(description string) ExactlyOnceOptsFunc 
 }
 
 func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscriber, error) {
-	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.StreamName)
+	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.DurableName)
+	cconfig := &nats.ConsumerConfig{
+		Durable:       config.DurableName,
+		Name:          config.DurableName,
+		Description:   config.ConsumerDescription,
+		FilterSubject: config.FilterSubject,
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxAckPending: 1,
+		MaxDeliver:    1,
+		DeliverPolicy: config.DeliverPolicy,
+		Replicas:      config.Replicas,
+	}
+	if ci != nil {
+		if !diffConfig(ci.Config, *cconfig) {
+			config.Logger.Warn("consumer %s for stream %s has a configuration mismatch and must be updated")
+			if _, err := config.JetStream.UpdateConsumer(config.StreamName, cconfig); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if ci == nil {
-		if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
-			Durable:       config.DurableName,
-			Name:          config.DurableName,
-			Description:   config.ConsumerDescription,
-			FilterSubject: config.FilterSubject,
-			AckPolicy:     nats.AckExplicitPolicy,
-			MaxAckPending: 1,
-			MaxDeliver:    1,
-			DeliverPolicy: config.DeliverPolicy,
-			Replicas:      config.Replicas,
-		}); err != nil && !isConsumerNameAlreadyExistsError(err) {
+		if _, err := config.JetStream.AddConsumer(config.StreamName, cconfig); err != nil && !isConsumerNameAlreadyExistsError(err) {
 			return nil, err
 		}
 	}

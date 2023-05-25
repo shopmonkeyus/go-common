@@ -326,3 +326,79 @@ func TestEphemeralConsumerAutoExtend(t *testing.T) {
 	n.Close()
 	server.Shutdown()
 }
+
+func TestExactlyOnceConsumerConfigChanged(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("stream%v", time.Now().Unix())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		return nil
+	}
+	ci, err := js.AddConsumer(queue, &nats.ConsumerConfig{
+		Durable:       "test",
+		Name:          "test",
+		Description:   "",
+		FilterSubject: queue + ".*",
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxAckPending: 1,
+		MaxDeliver:    1,
+		DeliverPolicy: nats.DeliverNewPolicy,
+		Replicas:      1,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, ci)
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test", queue+".*", handler, WithExactlyOnceReplicas(1))
+	assert.NoError(t, err)
+	assert.NotNil(t, sub)
+	sub.Close()
+}
+
+func TestQueueConsumerConfigChanged(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("qstream%v", time.Now().Unix())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		return nil
+	}
+	ci, err := js.AddConsumer(queue, &nats.ConsumerConfig{
+		Durable:       "test",
+		Name:          "test",
+		Description:   "",
+		FilterSubject: queue + ".*",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverNewPolicy,
+		MaxDeliver:    1,
+		MaxAckPending: 1000,
+		Replicas:      1,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, ci)
+	sub, err := NewQueueConsumer(log, js, queue, "test", queue+".*", handler, WithQueueReplicas(1))
+	assert.NoError(t, err)
+	assert.NotNil(t, sub)
+	sub.Close()
+}
