@@ -81,7 +81,7 @@ func TestExactlyOnceConsumer(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub, err := NewExactlyOnceConsumer(log, js, queue, "test", queue+".*", handler)
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test", queue+".*", handler, WithExactlyOnceReplicas(1))
 	assert.NoError(t, err, "failed to create consumer")
 	assert.NotNil(t, sub, "sub result was nil")
 	_msgid := fmt.Sprintf("%v", time.Now().Unix())
@@ -136,10 +136,10 @@ func TestQueueConsumer(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", queue+".*", handler1)
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", queue+".*", handler1, WithQueueReplicas(1))
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
-	sub2, err := NewQueueConsumer(log, js, queue, "qtest2", queue+".*", handler2)
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest2", queue+".*", handler2, WithQueueReplicas(1))
 	assert.NoError(t, err, "failed to create consumer 2")
 	assert.NotNil(t, sub1, "sub2 result was nil")
 	_msgid := fmt.Sprintf("%v", time.Now().Unix())
@@ -198,10 +198,10 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 		msg.AckSync()
 		return nil
 	}
-	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler1)
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler1, WithQueueReplicas(1))
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
-	sub2, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler2)
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler2, WithQueueReplicas(1))
 	assert.NoError(t, err, "failed to create consumer 2")
 	assert.NotNil(t, sub1, "sub2 result was nil")
 	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())

@@ -226,3 +226,7 @@ func (s *subscriber) run() {
 		}
 	}
 }
+
+func isConsumerNameAlreadyExistsError(err error) bool {
+	return strings.Contains(err.Error(), "consumer name already in use")
+}

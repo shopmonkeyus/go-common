@@ -20,6 +20,7 @@ type exactlyOnceConsumerConfig struct {
 	DeliverPolicy       nats.DeliverPolicy
 	Deliver             nats.SubOpt
 	MaxDeliver          int
+	Replicas            int
 }
 
 type ExactlyOnceOptsFunc func(config *exactlyOnceConsumerConfig) error
@@ -37,6 +38,7 @@ func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, st
 		DeliverPolicy:       nats.DeliverNewPolicy,
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
+		Replicas:            3,
 	}
 }
 
@@ -44,6 +46,14 @@ func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, st
 func WithExactlyOnceMaxDeliver(max int) ExactlyOnceOptsFunc {
 	return func(config *exactlyOnceConsumerConfig) error {
 		config.MaxDeliver = max
+		return nil
+	}
+}
+
+// WithExactlyOnceReplicas set the number of replicas for the consumer
+func WithExactlyOnceReplicas(replicas int) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.Replicas = replicas
 		return nil
 	}
 }
@@ -87,13 +97,15 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 	if ci == nil {
 		if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
 			Durable:       config.DurableName,
+			Name:          config.DurableName,
 			Description:   config.ConsumerDescription,
 			FilterSubject: config.FilterSubject,
 			AckPolicy:     nats.AckExplicitPolicy,
 			MaxAckPending: 1,
 			MaxDeliver:    1,
 			DeliverPolicy: config.DeliverPolicy,
-		}); err != nil {
+			Replicas:      config.Replicas,
+		}); err != nil && !isConsumerNameAlreadyExistsError(err) {
 			return nil, err
 		}
 	}

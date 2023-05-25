@@ -38,6 +38,7 @@ type gcloudLogger struct {
 	component string
 	sink      Sink
 	noConsole bool
+	ts        *time.Time // for unit testing
 }
 
 var _ Logger = (*gcloudLogger)(nil)
@@ -93,6 +94,13 @@ func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 	}
 }
 
+func (c *gcloudLogger) dequote(val string) string {
+	if strings.HasPrefix(val, "[") && strings.HasSuffix(val, "]") {
+		return val[1 : len(val)-1]
+	}
+	return val
+}
+
 func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 	_msg := msg
 	if len(args) > 0 {
@@ -103,7 +111,7 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 		Message:   _msg,
 		Trace:     c.traceID,
 		Metadata:  c.metadata,
-		Component: c.component,
+		Component: c.dequote(c.component),
 		Timestamp: time.Now(),
 	}
 	if !c.noConsole {
@@ -111,6 +119,9 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 	}
 	if c.sink != nil {
 		entry.Message = ansiColorStripper.ReplaceAllString(entry.Message, "")
+		if c.ts != nil {
+			entry.Timestamp = *c.ts // for testing
+		}
 		buf, _ := json.Marshal(entry)
 		c.sink.Write(buf)
 	}
