@@ -10,6 +10,7 @@ import (
 )
 
 type Secret *secretmanagerpb.Secret
+
 // FetchSecret will fetch a secret by name for a given project
 func FetchSecret(ctx context.Context, projectID string, name string) ([]byte, error) {
 	client, err := secretmanager.NewClient(ctx)
@@ -27,14 +28,14 @@ func FetchSecret(ctx context.Context, projectID string, name string) ([]byte, er
 	return result.Payload.Data, nil
 }
 
-func WriteSecret(ctx context.Context, projectID string, name string, sercretValue []byte) (error) {
-	client, err  := secretmanager.NewClient(ctx)
+func WriteSecret(ctx context.Context, projectID string, name string, sercretValue []byte) error {
+	client, err := secretmanager.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to setup secret client: %v", err)
 	}
 	defer client.Close()
 	createRequest := &secretmanagerpb.CreateSecretRequest{
-		Parent: fmt.Sprintf("projects/%s", projectID),
+		Parent:   fmt.Sprintf("projects/%s", projectID),
 		SecretId: name,
 		Secret: &secretmanagerpb.Secret{
 			Replication: &secretmanagerpb.Replication{

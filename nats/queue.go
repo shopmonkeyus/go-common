@@ -21,6 +21,7 @@ type queueConsumerConfig struct {
 	Deliver             nats.SubOpt
 	MaxAckPending       int
 	MaxDeliver          int
+	Replicas            int
 }
 
 type QueueOptsFunc func(config *queueConsumerConfig) error
@@ -39,6 +40,15 @@ func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream s
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
+		Replicas:            3,
+	}
+}
+
+// WithQueueReplicas set the number of replicas
+func WithQueueReplicas(replicas int) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.Replicas = replicas
+		return nil
 	}
 }
 
@@ -103,7 +113,8 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 			MaxAckPending: config.MaxAckPending,
 			DeliverPolicy: config.DeliverPolicy,
 			MaxDeliver:    config.MaxDeliver,
-		}); err != nil {
+			Replicas:      config.Replicas,
+		}); err != nil && !isConsumerNameAlreadyExistsError(err) {
 			return nil, err
 		}
 	}
