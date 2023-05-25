@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -94,9 +95,15 @@ func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 	}
 }
 
-func (c *gcloudLogger) dequote(val string) string {
-	if strings.HasPrefix(val, "[") && strings.HasSuffix(val, "]") {
-		return val[1 : len(val)-1]
+var re = regexp.MustCompile(`\[(.*?)\]`)
+
+func (c *gcloudLogger) tokenize(val string) string {
+	if re.MatchString(val) {
+		vals := make([]string, 0)
+		for _, token := range re.FindAllString(val, -1) {
+			vals = append(vals, re.ReplaceAllString(token, "$1"))
+		}
+		return strings.Join(vals, ", ")
 	}
 	return val
 }
@@ -111,7 +118,7 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 		Message:   _msg,
 		Trace:     c.traceID,
 		Metadata:  c.metadata,
-		Component: c.dequote(c.component),
+		Component: c.tokenize(c.component),
 		Timestamp: time.Now(),
 	}
 	if !c.noConsole {

@@ -22,6 +22,7 @@ type queueConsumerConfig struct {
 	MaxAckPending       int
 	MaxDeliver          int
 	Replicas            int
+	DisableSubLogging   bool
 }
 
 type QueueOptsFunc func(config *queueConsumerConfig) error
@@ -41,6 +42,14 @@ func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream s
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
 		Replicas:            3,
+	}
+}
+
+// WithQueueDisableSubscriberLogging to turn off extra trace logging in the subscriber
+func WithQueueDisableSubscriberLogging() QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.DisableSubLogging = true
+		return nil
 	}
 }
 
@@ -140,11 +149,12 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 		return nil, err
 	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:      config.Context,
-		logger:   config.Logger,
-		sub:      sub,
-		handler:  config.Handler,
-		maxfetch: config.MaxDeliver,
+		ctx:        config.Context,
+		logger:     config.Logger,
+		sub:        sub,
+		handler:    config.Handler,
+		maxfetch:   config.MaxDeliver,
+		disableLog: config.DisableSubLogging,
 	})
 	return eos, nil
 }

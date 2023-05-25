@@ -22,6 +22,7 @@ type ephemeralConsumerConfig struct {
 	MaxDeliver          int
 	MaxAckPending       int
 	AckWait             time.Duration
+	DisableSubLogging   bool
 }
 
 type EphemeralOptsFunc func(config *ephemeralConsumerConfig) error
@@ -40,6 +41,14 @@ func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stre
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
 		AckWait:             time.Second * 30,
+	}
+}
+
+// WithEphemeralDisableSubscriberLogging to turn off extra trace logging in the subscriber
+func WithEphemeralDisableSubscriberLogging() EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.DisableSubLogging = true
+		return nil
 	}
 }
 
@@ -133,6 +142,7 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 		handler:        config.Handler,
 		maxfetch:       config.MaxDeliver,
 		extendInterval: config.AckWait,
+		disableLog:     config.DisableSubLogging,
 	})
 	return eos, nil
 }
