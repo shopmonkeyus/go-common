@@ -21,6 +21,7 @@ type exactlyOnceConsumerConfig struct {
 	Deliver             nats.SubOpt
 	MaxDeliver          int
 	Replicas            int
+	DisableSubLogging   bool
 }
 
 type ExactlyOnceOptsFunc func(config *exactlyOnceConsumerConfig) error
@@ -39,6 +40,14 @@ func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, st
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
 		Replicas:            3,
+	}
+}
+
+// WithExactlyOnceDisableSubscriberLogging to turn off extra trace logging in the subscriber
+func WithExactlyOnceDisableSubscriberLogging() ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.DisableSubLogging = true
+		return nil
 	}
 }
 
@@ -131,11 +140,12 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 		return nil, err
 	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:      config.Context,
-		logger:   config.Logger,
-		sub:      sub,
-		handler:  config.Handler,
-		maxfetch: 1,
+		ctx:        config.Context,
+		logger:     config.Logger,
+		sub:        sub,
+		handler:    config.Handler,
+		maxfetch:   1,
+		disableLog: config.DisableSubLogging,
 	})
 	return eos, nil
 }

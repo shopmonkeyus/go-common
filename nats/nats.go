@@ -41,6 +41,7 @@ type subscriber struct {
 	ackLock         sync.Mutex
 	extendInterval  time.Duration
 	maxfetch        int
+	disableLog      bool
 }
 
 type subscriberOpts struct {
@@ -50,6 +51,7 @@ type subscriberOpts struct {
 	handler        Handler
 	extendInterval time.Duration
 	maxfetch       int
+	disableLog     bool
 }
 
 var _ Subscriber = (*subscriber)(nil)
@@ -70,6 +72,7 @@ func newSubscriber(opts subscriberOpts) *subscriber {
 		cancel:         cancel,
 		extendInterval: opts.extendInterval,
 		maxfetch:       opts.maxfetch,
+		disableLog:     opts.disableLog,
 	}
 	go sub.extender()
 	go sub.run()
@@ -114,7 +117,9 @@ func (s *subscriber) extender() {
 		case <-t.C:
 			s.ackLock.Lock()
 			if s.inflight != nil {
-				s.logger.Debug("extending %s ack timeout (%s/%d) running %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, time.Since(*s.inflightStarted))
+				if !s.disableLog {
+					s.logger.Debug("extending %s ack timeout (%s/%d) running %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, time.Since(*s.inflightStarted))
+				}
 				if err := s.inflight.InProgress(); err != nil {
 					s.logger.Error("error extending in progress %s (%s/%d): %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, err)
 				}
@@ -181,7 +186,9 @@ func (s *subscriber) run() {
 				msg.Term() // no longer allow it to be reprocessed
 				continue
 			}
-			s.logger.Debug("processing message: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
+			if !s.disableLog {
+				s.logger.Debug("processing message: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
+			}
 			encoding := msg.Header.Get("content-encoding")
 			gzipped := encoding == "gzip/json"
 			started := time.Now()
