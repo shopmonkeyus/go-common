@@ -223,7 +223,7 @@ func (s *subscriber) run() {
 			s.ackLock.Unlock()
 
 			// now do cleanup
-			if err != nil && strings.Contains(err.Error(), "message was already acknowledged") {
+			if err != nil && !strings.Contains(err.Error(), "message was already acknowledged") {
 				if errors.Is(err, context.Canceled) {
 					s.logger.Warn("nack message %s: (%v/%d) [canceled]", msg.Subject, msgid, md.Sequence.Consumer)
 					msg.Nak()
