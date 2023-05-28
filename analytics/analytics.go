@@ -113,24 +113,24 @@ func defaultTrackerOpts() *analyticsOpts {
 // Analytics is a background service which is used for delivering analytics events in the background
 type Analytics interface {
 	// Queue an analytics event which will be delivered in the background
-	Queue(name string, action string, data map[string]interface{}, opts ...analyticsOptFn) error
+	Queue(name string, action string, data any, opts ...analyticsOptFn) error
 
 	// Close will flush all pending analytics events and close the background sender
 	Close() error
 }
 
 type Event struct {
-	Timestamp  time.Time              `json:"timestamp"`
-	Branch     string                 `json:"branch"`
-	Region     string                 `json:"region"`
-	Name       string                 `json:"name"`
-	Action     string                 `json:"action,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
-	CompanyId  *string                `json:"companyId,omitempty"`
-	LocationId *string                `json:"locationId,omitempty"`
-	UserId     *string                `json:"userId,omitempty"`
-	SessionId  *string                `json:"sessionId,omitempty"`
-	RequestId  *string                `json:"requestId,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+	Branch     string    `json:"branch"`
+	Region     string    `json:"region"`
+	Name       string    `json:"name"`
+	Action     string    `json:"action,omitempty"`
+	Data       any       `json:"data,omitempty"`
+	CompanyId  *string   `json:"companyId,omitempty"`
+	LocationId *string   `json:"locationId,omitempty"`
+	UserId     *string   `json:"userId,omitempty"`
+	SessionId  *string   `json:"sessionId,omitempty"`
+	RequestId  *string   `json:"requestId,omitempty"`
 }
 
 var replacer = regexp.MustCompile(`[\.:\s\/\+\*]`)
@@ -151,7 +151,7 @@ type analytics struct {
 
 var _ Analytics = (*analytics)(nil)
 
-func (t *analytics) Queue(name string, action string, data map[string]interface{}, opts ...analyticsOptFn) error {
+func (t *analytics) Queue(name string, action string, data any, opts ...analyticsOptFn) error {
 	select {
 	case <-t.ctx.Done():
 		return ErrTrackerClosed
@@ -169,7 +169,6 @@ func (t *analytics) Queue(name string, action string, data map[string]interface{
 		Branch:    config.Branch,
 		Region:    config.Region,
 	}
-
 	if config.CompanyId != "" {
 		config.event.CompanyId = &config.CompanyId
 	}
@@ -185,7 +184,6 @@ func (t *analytics) Queue(name string, action string, data map[string]interface{
 	if config.RequestId != "" {
 		config.event.RequestId = &config.RequestId
 	}
-
 	buf, _ := json.Marshal(config.event)
 	msgid := config.MessageId
 	if msgid == "" {
