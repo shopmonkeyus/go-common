@@ -51,7 +51,7 @@ func TestAnalyticsBasic(t *testing.T) {
 	defer sub.Close()
 	analytics, err := New(context.Background(), log, js)
 	assert.NoError(t, err)
-	assert.NoError(t, analytics.Queue("test", "click", nil))
+	assert.NoError(t, analytics.Queue("test", "click", "companyId", "locationId", nil))
 	analytics.Close()
 	time.Sleep(time.Millisecond * 100)
 	assert.Equal(t, "dev", event.Region)
@@ -61,16 +61,17 @@ func TestAnalyticsBasic(t *testing.T) {
 	assert.NotEmpty(t, event.Timestamp)
 	assert.False(t, event.Timestamp.IsZero())
 	assert.Nil(t, event.Data)
-	assert.Nil(t, event.CompanyId)
-	assert.Nil(t, event.LocationId)
+	assert.Equal(t, "companyId", event.CompanyId)
+	assert.Equal(t, "locationId", event.LocationId)
 	assert.Nil(t, event.SessionId)
 	assert.Nil(t, event.UserId)
 	assert.Nil(t, event.RequestId)
 	assert.Equal(t, "dev", msg.Header.Get("region"))
-	assert.Empty(t, "", msg.Header.Get("x-company-id"))
-	assert.Empty(t, "", msg.Header.Get("x-location-id"))
+	assert.Equal(t, "companyId", msg.Header.Get("x-company-id"))
+	assert.Equal(t, "locationId", msg.Header.Get("x-location-id"))
 	assert.Empty(t, "", msg.Header.Get("x-user-id"))
 	assert.NotEmpty(t, msg.Header.Get("Nats-Msg-Id"))
+	assert.Equal(t, "analytics.companyId.locationId.test.click", msg.Subject)
 }
 
 func TestAnalyticsWithOverride(t *testing.T) {
@@ -103,11 +104,9 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	assert.NoError(t, err)
 	analytics, err := New(context.Background(), log, js)
 	assert.NoError(t, err)
-	assert.NoError(t, analytics.Queue("test", "click", map[string]interface{}{"foo": "bar"},
+	assert.NoError(t, analytics.Queue("test", "click", "companyId", "locationId", map[string]interface{}{"foo": "bar"},
 		WithRegion("region"),
 		WithBranch("branch"),
-		WithCompanyId("companyid"),
-		WithLocationId("locationid"),
 		WithUserId("userid"),
 		WithSessionId("sessionid"),
 		WithRequestId("requestid"),
@@ -127,17 +126,84 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	assert.NotNil(t, event.SessionId)
 	assert.NotNil(t, event.UserId)
 	assert.NotNil(t, event.RequestId)
-	assert.Equal(t, "companyid", *event.CompanyId)
-	assert.Equal(t, "locationid", *event.LocationId)
+	assert.Equal(t, "companyId", event.CompanyId)
+	assert.Equal(t, "locationId", event.LocationId)
 	assert.Equal(t, "sessionid", *event.SessionId)
 	assert.Equal(t, "userid", *event.UserId)
 	assert.Equal(t, "requestid", *event.RequestId)
 	assert.Equal(t, "region", msg.Header.Get("region"))
-	assert.Equal(t, "companyid", msg.Header.Get("x-company-id"))
-	assert.Equal(t, "locationid", msg.Header.Get("x-location-id"))
+	assert.Equal(t, "companyId", msg.Header.Get("x-company-id"))
+	assert.Equal(t, "locationId", msg.Header.Get("x-location-id"))
 	assert.Equal(t, "userid", msg.Header.Get("x-user-id"))
 	assert.Equal(t, id, msg.Header.Get("Nats-Msg-Id"))
 	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data)
+	assert.Equal(t, "analytics.companyId.locationId.test.click", msg.Subject)
+}
+
+func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := gnats.NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	defer n.Close()
+	js, err := n.JetStream()
+	assert.NoError(t, err)
+	js.AddStream(&nats.StreamConfig{
+		Name:     "analytics",
+		Subjects: []string{"analytics.>"},
+	})
+	var event Event
+	var msg *nats.Msg
+	handler := func(ctx context.Context, payload []byte, _msg *nats.Msg) error {
+		if err := json.Unmarshal(payload, &event); err != nil {
+			return err
+		}
+		msg = _msg
+		return msg.AckSync()
+	}
+	sub, err := gnats.NewEphemeralConsumer(log, js, "analytics", "analytics.>", handler)
+	assert.NoError(t, err)
+	defer sub.Close()
+	id, err := cstring.GenerateRandomString(10)
+	assert.NoError(t, err)
+	analytics, err := New(context.Background(), log, js)
+	assert.NoError(t, err)
+	assert.NoError(t, analytics.Queue("test", "click", "", "", map[string]interface{}{"foo": "bar"},
+		WithRegion("region"),
+		WithBranch("branch"),
+		WithUserId("userid"),
+		WithSessionId("sessionid"),
+		WithRequestId("requestid"),
+		WithMessageId(id),
+	))
+	analytics.Close()
+	time.Sleep(time.Millisecond * 100)
+	assert.Equal(t, "region", event.Region)
+	assert.Equal(t, "branch", event.Branch)
+	assert.Equal(t, "test", event.Name)
+	assert.Equal(t, "click", event.Action)
+	assert.NotEmpty(t, event.Timestamp)
+	assert.False(t, event.Timestamp.IsZero())
+	assert.NotNil(t, event.Data)
+	assert.NotNil(t, event.CompanyId)
+	assert.NotNil(t, event.LocationId)
+	assert.NotNil(t, event.SessionId)
+	assert.NotNil(t, event.UserId)
+	assert.NotNil(t, event.RequestId)
+	assert.Empty(t, event.CompanyId)
+	assert.Empty(t, event.LocationId)
+	assert.Equal(t, "sessionid", *event.SessionId)
+	assert.Equal(t, "userid", *event.UserId)
+	assert.Equal(t, "requestid", *event.RequestId)
+	assert.Equal(t, "region", msg.Header.Get("region"))
+	assert.Empty(t, msg.Header.Get("x-company-id"))
+	assert.Empty(t, msg.Header.Get("x-location-id"))
+	assert.Equal(t, "userid", msg.Header.Get("x-user-id"))
+	assert.Equal(t, id, msg.Header.Get("Nats-Msg-Id"))
+	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data)
+	assert.Equal(t, "analytics.NONE.NONE.test.click", msg.Subject)
 }
 
 func TestAnalyticsClosedErorr(t *testing.T) {
@@ -157,6 +223,6 @@ func TestAnalyticsClosedErorr(t *testing.T) {
 	analytics, err := New(context.Background(), log, js)
 	assert.NoError(t, err)
 	analytics.Close()
-	err = analytics.Queue("test", "click", nil)
+	err = analytics.Queue("test", "click", "companyId", "locationId", nil)
 	assert.EqualError(t, err, ErrTrackerClosed.Error())
 }
