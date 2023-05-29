@@ -21,16 +21,14 @@ var region = os.Getenv("SM_REGION")
 var branch = os.Getenv("SM_BRANCH")
 
 type analyticsOpts struct {
-	Region     string
-	Branch     string
-	CompanyId  string
-	LocationId string
-	UserId     string
-	SessionId  string
-	RequestId  string
-	MessageId  string
-	event      Event
-	buf        []byte
+	Region    string
+	Branch    string
+	UserId    string
+	SessionId string
+	RequestId string
+	MessageId string
+	event     Event
+	buf       []byte
 }
 
 type analyticsOptFn func(opts *analyticsOpts)
@@ -58,20 +56,6 @@ func WithRegion(region string) analyticsOptFn {
 func WithBranch(branch string) analyticsOptFn {
 	return func(opts *analyticsOpts) {
 		opts.Branch = branch
-	}
-}
-
-// WithCompanyId will set the companyId on the event
-func WithCompanyId(companyId string) analyticsOptFn {
-	return func(opts *analyticsOpts) {
-		opts.CompanyId = companyId
-	}
-}
-
-// WithLocationId will set the locationId on the event
-func WithLocationId(locationId string) analyticsOptFn {
-	return func(opts *analyticsOpts) {
-		opts.LocationId = locationId
 	}
 }
 
@@ -113,7 +97,7 @@ func defaultTrackerOpts() *analyticsOpts {
 // Analytics is a background service which is used for delivering analytics events in the background
 type Analytics interface {
 	// Queue an analytics event which will be delivered in the background
-	Queue(name string, action string, data any, opts ...analyticsOptFn) error
+	Queue(name string, action string, companyId string, locationId string, data any, opts ...analyticsOptFn) error
 
 	// Close will flush all pending analytics events and close the background sender
 	Close() error
@@ -125,9 +109,9 @@ type Event struct {
 	Region     string    `json:"region"`
 	Name       string    `json:"name"`
 	Action     string    `json:"action,omitempty"`
+	CompanyId  string    `json:"companyId"`
+	LocationId string    `json:"locationId"`
 	Data       any       `json:"data,omitempty"`
-	CompanyId  *string   `json:"companyId,omitempty"`
-	LocationId *string   `json:"locationId,omitempty"`
 	UserId     *string   `json:"userId,omitempty"`
 	SessionId  *string   `json:"sessionId,omitempty"`
 	RequestId  *string   `json:"requestId,omitempty"`
@@ -151,7 +135,7 @@ type analytics struct {
 
 var _ Analytics = (*analytics)(nil)
 
-func (t *analytics) Queue(name string, action string, data any, opts ...analyticsOptFn) error {
+func (t *analytics) Queue(name string, action string, companyId string, locationId string, data any, opts ...analyticsOptFn) error {
 	select {
 	case <-t.ctx.Done():
 		return ErrTrackerClosed
@@ -162,18 +146,14 @@ func (t *analytics) Queue(name string, action string, data any, opts ...analytic
 		fn(config)
 	}
 	config.event = Event{
-		Timestamp: time.Now(),
-		Name:      name,
-		Action:    action,
-		Data:      data,
-		Branch:    config.Branch,
-		Region:    config.Region,
-	}
-	if config.CompanyId != "" {
-		config.event.CompanyId = &config.CompanyId
-	}
-	if config.LocationId != "" {
-		config.event.LocationId = &config.LocationId
+		Timestamp:  time.Now(),
+		Name:       name,
+		Action:     action,
+		Data:       data,
+		Branch:     config.Branch,
+		Region:     config.Region,
+		CompanyId:  companyId,
+		LocationId: locationId,
 	}
 	if config.UserId != "" {
 		config.event.UserId = &config.UserId
@@ -210,16 +190,24 @@ func (t *analytics) run() {
 	for {
 		select {
 		case config := <-t.events:
-			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s", safeToken(config.event.Name), safeToken(config.event.Action)))
+			companyId := config.event.CompanyId
+			if companyId == "" {
+				companyId = "NONE"
+			}
+			locationId := config.event.LocationId
+			if locationId == "" {
+				locationId = "NONE"
+			}
+			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s.%s", companyId, locationId, safeToken(config.event.Name), safeToken(config.event.Action)))
 			msg.Header.Set("Nats-Msg-Id", config.MessageId)
-			if config.CompanyId != "" {
-				msg.Header.Set("x-company-id", config.CompanyId)
+			if companyId != "NONE" {
+				msg.Header.Set("x-company-id", companyId)
 			}
 			if config.UserId != "" {
 				msg.Header.Set("x-user-id", config.UserId)
 			}
-			if config.LocationId != "" {
-				msg.Header.Set("x-location-id", config.LocationId)
+			if locationId != "NONE" {
+				msg.Header.Set("x-location-id", locationId)
 			}
 			if config.Region != "" {
 				msg.Header.Set("region", config.Region)
