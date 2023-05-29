@@ -146,7 +146,7 @@ func (t *analytics) Queue(name string, action string, companyId string, location
 		fn(config)
 	}
 	config.event = Event{
-		Timestamp:  time.Now(),
+		Timestamp:  time.Now().UTC(),
 		Name:       name,
 		Action:     action,
 		Data:       data,
