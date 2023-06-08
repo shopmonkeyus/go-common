@@ -51,16 +51,18 @@ func TestAnalyticsBasic(t *testing.T) {
 	defer sub.Close()
 	analytics, err := New(context.Background(), log, js)
 	assert.NoError(t, err)
-	assert.NoError(t, analytics.Queue("test", "click", "companyId", "locationId", nil))
+	assert.NoError(t, analytics.Queue("test", "companyId", "locationId", nil))
 	analytics.Close()
 	time.Sleep(time.Millisecond * 100)
 	assert.Equal(t, "dev", event.Region)
 	assert.Equal(t, "dev", event.Branch)
 	assert.Equal(t, "test", event.Name)
-	assert.Equal(t, "click", event.Action)
 	assert.NotEmpty(t, event.Timestamp)
 	assert.False(t, event.Timestamp.IsZero())
-	assert.Nil(t, event.Data)
+	assert.NotNil(t, event.Data)
+	assert.Nil(t, event.Data.(map[string]interface{})["payload"])
+	assert.NotNil(t, event.Data.(map[string]interface{})["context"])
+	assert.Equal(t, "server", event.Data.(map[string]interface{})["context"].(map[string]interface{})["location"])
 	assert.Equal(t, "companyId", event.CompanyId)
 	assert.Equal(t, "locationId", event.LocationId)
 	assert.Nil(t, event.SessionId)
@@ -71,7 +73,7 @@ func TestAnalyticsBasic(t *testing.T) {
 	assert.Equal(t, "locationId", msg.Header.Get("x-location-id"))
 	assert.Empty(t, "", msg.Header.Get("x-user-id"))
 	assert.NotEmpty(t, msg.Header.Get("Nats-Msg-Id"))
-	assert.Equal(t, "analytics.companyId.locationId.test.click", msg.Subject)
+	assert.Equal(t, "analytics.companyId.locationId.test", msg.Subject)
 }
 
 func TestAnalyticsWithOverride(t *testing.T) {
@@ -104,7 +106,7 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	assert.NoError(t, err)
 	analytics, err := New(context.Background(), log, js)
 	assert.NoError(t, err)
-	assert.NoError(t, analytics.Queue("test", "click", "companyId", "locationId", map[string]interface{}{"foo": "bar"},
+	assert.NoError(t, analytics.Queue("test", "companyId", "locationId", map[string]interface{}{"foo": "bar"},
 		WithRegion("region"),
 		WithBranch("branch"),
 		WithUserId("userid"),
@@ -117,7 +119,6 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	assert.Equal(t, "region", event.Region)
 	assert.Equal(t, "branch", event.Branch)
 	assert.Equal(t, "test", event.Name)
-	assert.Equal(t, "click", event.Action)
 	assert.NotEmpty(t, event.Timestamp)
 	assert.False(t, event.Timestamp.IsZero())
 	assert.NotNil(t, event.Data)
@@ -136,8 +137,8 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	assert.Equal(t, "locationId", msg.Header.Get("x-location-id"))
 	assert.Equal(t, "userid", msg.Header.Get("x-user-id"))
 	assert.Equal(t, id, msg.Header.Get("Nats-Msg-Id"))
-	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data)
-	assert.Equal(t, "analytics.companyId.locationId.test.click", msg.Subject)
+	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data.(map[string]interface{})["payload"])
+	assert.Equal(t, "analytics.companyId.locationId.test", msg.Subject)
 }
 
 func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
@@ -170,7 +171,7 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 	assert.NoError(t, err)
 	analytics, err := New(context.Background(), log, js)
 	assert.NoError(t, err)
-	assert.NoError(t, analytics.Queue("test", "click", "", "", map[string]interface{}{"foo": "bar"},
+	assert.NoError(t, analytics.Queue("test", "", "", map[string]interface{}{"foo": "bar"},
 		WithRegion("region"),
 		WithBranch("branch"),
 		WithUserId("userid"),
@@ -183,7 +184,6 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 	assert.Equal(t, "region", event.Region)
 	assert.Equal(t, "branch", event.Branch)
 	assert.Equal(t, "test", event.Name)
-	assert.Equal(t, "click", event.Action)
 	assert.NotEmpty(t, event.Timestamp)
 	assert.False(t, event.Timestamp.IsZero())
 	assert.NotNil(t, event.Data)
@@ -202,8 +202,8 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 	assert.Empty(t, msg.Header.Get("x-location-id"))
 	assert.Equal(t, "userid", msg.Header.Get("x-user-id"))
 	assert.Equal(t, id, msg.Header.Get("Nats-Msg-Id"))
-	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data)
-	assert.Equal(t, "analytics.NONE.NONE.test.click", msg.Subject)
+	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data.(map[string]interface{})["payload"])
+	assert.Equal(t, "analytics.NONE.NONE.test", msg.Subject)
 }
 
 func TestAnalyticsClosedErorr(t *testing.T) {
@@ -225,4 +225,20 @@ func TestAnalyticsClosedErorr(t *testing.T) {
 	analytics.Close()
 	err = analytics.Queue("test", "click", "companyId", "locationId", nil)
 	assert.EqualError(t, err, ErrTrackerClosed.Error())
+}
+
+func TestSafeToken(t *testing.T) {
+	assert.False(t, isValidName("a b"))
+	assert.False(t, isValidName("a%b"))
+	assert.False(t, isValidName("a^b"))
+	assert.False(t, isValidName("1bc"))
+	assert.False(t, isValidName("abc."))
+	assert.False(t, isValidName("abc-"))
+	assert.False(t, isValidName("abc_"))
+	assert.True(t, isValidName("ab"))
+	assert.True(t, isValidName("a.b"))
+	assert.True(t, isValidName("a.b"))
+	assert.True(t, isValidName("a.b-c"))
+	assert.True(t, isValidName("a.b_c"))
+	assert.True(t, isValidName("a.1"))
 }

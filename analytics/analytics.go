@@ -19,14 +19,24 @@ var ErrTrackerClosed = errors.New("analytics: closed")
 
 var region = os.Getenv("SM_REGION")
 var branch = os.Getenv("SM_BRANCH")
+var commit = os.Getenv("SM_COMMIT_SHA")
+var branchid = os.Getenv("SM_BRANCH_SHA")
+var podName = os.Getenv("POD_NAME")
+var podId = os.Getenv("POD_ID")
+var podIp = os.Getenv("POD_IP")
 
 type analyticsOpts struct {
 	Region    string
 	Branch    string
+	BranchId  string
 	UserId    string
 	SessionId string
 	RequestId string
 	MessageId string
+	Scope     string
+	PodName   string
+	PodID     string
+	PodIP     string
 	event     Event
 	buf       []byte
 }
@@ -56,6 +66,41 @@ func WithRegion(region string) analyticsOptFn {
 func WithBranch(branch string) analyticsOptFn {
 	return func(opts *analyticsOpts) {
 		opts.Branch = branch
+	}
+}
+
+// WithBranchId will override the branch id setting on the event
+func WithBranchId(branchId string) analyticsOptFn {
+	return func(opts *analyticsOpts) {
+		opts.BranchId = branchId
+	}
+}
+
+// WithScope will override the scope setting on the event
+func WithScope(scope string) analyticsOptFn {
+	return func(opts *analyticsOpts) {
+		opts.Scope = scope
+	}
+}
+
+// WithPodName will override the pod name setting on the event
+func WithPodName(name string) analyticsOptFn {
+	return func(opts *analyticsOpts) {
+		opts.PodName = name
+	}
+}
+
+// WithPodID will override the pod id setting on the event
+func WithPodID(id string) analyticsOptFn {
+	return func(opts *analyticsOpts) {
+		opts.PodID = id
+	}
+}
+
+// WithPodIPAddress will override the pod ip address setting on the event
+func WithPodIPAddress(ip string) analyticsOptFn {
+	return func(opts *analyticsOpts) {
+		opts.PodIP = ip
 	}
 }
 
@@ -89,15 +134,18 @@ func WithMessageId(messageId string) analyticsOptFn {
 
 func defaultTrackerOpts() *analyticsOpts {
 	return &analyticsOpts{
-		Region: region,
-		Branch: branch,
+		Region:  region,
+		Branch:  branch,
+		PodName: podName,
+		PodIP:   podIp,
+		PodID:   podId,
 	}
 }
 
 // Analytics is a background service which is used for delivering analytics events in the background
 type Analytics interface {
 	// Queue an analytics event which will be delivered in the background
-	Queue(name string, action string, companyId string, locationId string, data any, opts ...analyticsOptFn) error
+	Queue(name string, companyId string, locationId string, data any, opts ...analyticsOptFn) error
 
 	// Close will flush all pending analytics events and close the background sender
 	Close() error
@@ -108,7 +156,6 @@ type Event struct {
 	Branch     string    `json:"branch"`
 	Region     string    `json:"region"`
 	Name       string    `json:"name"`
-	Action     string    `json:"action,omitempty"`
 	CompanyId  string    `json:"companyId"`
 	LocationId string    `json:"locationId"`
 	Data       any       `json:"data,omitempty"`
@@ -117,10 +164,14 @@ type Event struct {
 	RequestId  *string   `json:"requestId,omitempty"`
 }
 
-var replacer = regexp.MustCompile(`[\.:\s\/\+\*]`)
+// event naming rules:
+// 1. must start with letter
+// 2. must only contain a valid alpanumeric, dash, underscore or period
+// 3. must end with a valid alphanumeric (not dash, period or underscore)
+var validNameRegex = regexp.MustCompile(`^[a-zA-Z][\w-_\.]*[a-zA-Z0-9]+$`)
 
-func safeToken(token string) string {
-	return replacer.ReplaceAllString(token, "-")
+func isValidName(name string) bool {
+	return validNameRegex.MatchString(name)
 }
 
 type analytics struct {
@@ -135,7 +186,10 @@ type analytics struct {
 
 var _ Analytics = (*analytics)(nil)
 
-func (t *analytics) Queue(name string, action string, companyId string, locationId string, data any, opts ...analyticsOptFn) error {
+func (t *analytics) Queue(name string, companyId string, locationId string, payload any, opts ...analyticsOptFn) error {
+	if !isValidName(name) {
+		return fmt.Errorf("invalid event name: '%s'. must match pattern: %s", name, validNameRegex.String())
+	}
 	select {
 	case <-t.ctx.Done():
 		return ErrTrackerClosed
@@ -146,10 +200,22 @@ func (t *analytics) Queue(name string, action string, companyId string, location
 		fn(config)
 	}
 	config.event = Event{
-		Timestamp:  time.Now().UTC(),
-		Name:       name,
-		Action:     action,
-		Data:       data,
+		Timestamp: time.Now().UTC(),
+		Name:      name,
+		Data: map[string]interface{}{
+			"payload": payload,
+			"context": map[string]interface{}{
+				"location": "server",
+				"scope":    config.Scope,
+				"pod": map[string]interface{}{
+					"name": config.PodName,
+					"id":   config.PodID,
+					"ip":   config.PodIP,
+				},
+				"commit":   commit,
+				"branchid": branchid,
+			},
+		},
 		Branch:     config.Branch,
 		Region:     config.Region,
 		CompanyId:  companyId,
@@ -198,7 +264,7 @@ func (t *analytics) run() {
 			if locationId == "" {
 				locationId = "NONE"
 			}
-			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s.%s", companyId, locationId, safeToken(config.event.Name), safeToken(config.event.Action)))
+			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s", companyId, locationId, config.event.Name))
 			msg.Header.Set("Nats-Msg-Id", config.MessageId)
 			if companyId != "NONE" {
 				msg.Header.Set("x-company-id", companyId)
