@@ -1,10 +1,9 @@
 package nats
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -240,8 +239,33 @@ func isConsumerNameAlreadyExistsError(err error) bool {
 	return strings.Contains(err.Error(), "consumer name already in use")
 }
 
-func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) bool {
-	b1, _ := json.Marshal(a)
-	b2, _ := json.Marshal(b)
-	return bytes.EqualFold(b1, b2)
+func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) (string, bool) {
+	if a.AckPolicy != b.AckPolicy {
+		return fmt.Sprintf("%v != %v", a.AckPolicy, b.AckPolicy), false
+	}
+	if a.DeliverPolicy != b.DeliverPolicy {
+		return fmt.Sprintf("%v != %v", a.DeliverPolicy, b.DeliverPolicy), false
+	}
+	if a.Description != b.Description {
+		return fmt.Sprintf("%v != %v", a.Description, b.Description), false
+	}
+	if a.Durable != b.Durable {
+		return fmt.Sprintf("%v != %v", a.Durable, b.Durable), false
+	}
+	if a.FilterSubject != b.FilterSubject {
+		return fmt.Sprintf("%v != %v", a.FilterSubject, b.FilterSubject), false
+	}
+	if a.MaxAckPending != b.MaxAckPending {
+		return fmt.Sprintf("%v != %v", a.MaxAckPending, b.MaxAckPending), false
+	}
+	if a.MaxDeliver != b.MaxDeliver {
+		return fmt.Sprintf("%v != %v", a.MaxDeliver, b.MaxDeliver), false
+	}
+	if a.Name != b.Name {
+		return fmt.Sprintf("%v != %v", a.Name, b.Name), false
+	}
+	if a.Replicas != b.Replicas {
+		return fmt.Sprintf("%v != %v", a.Replicas, b.Replicas), false
+	}
+	return "", true
 }

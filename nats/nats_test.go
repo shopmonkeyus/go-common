@@ -402,3 +402,29 @@ func TestQueueConsumerConfigChanged(t *testing.T) {
 	assert.NotNil(t, sub)
 	sub.Close()
 }
+
+func TestDiffConfig(t *testing.T) {
+	msg, ok := diffConfig(nats.ConsumerConfig{
+		Durable:       "test",
+		Name:          "test",
+		Description:   "",
+		FilterSubject: "test.*",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverNewPolicy,
+		MaxDeliver:    1,
+		MaxAckPending: 1000,
+		Replicas:      1,
+	}, nats.ConsumerConfig{
+		Durable:       "test",
+		Name:          "test",
+		Description:   "",
+		FilterSubject: "test.>",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverNewPolicy,
+		MaxDeliver:    1,
+		MaxAckPending: 1000,
+		Replicas:      1,
+	})
+	assert.False(t, ok)
+	assert.Equal(t, "test.* != test.>", msg)
+}
