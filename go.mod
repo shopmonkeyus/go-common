@@ -5,7 +5,7 @@ go 1.20
 require (
 	cloud.google.com/go/secretmanager v1.11.0
 	github.com/nats-io/nats-server/v2 v2.9.17
-	github.com/nats-io/nats.go v1.26.0
+	github.com/nats-io/nats.go v1.27.1
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/oauth2 v0.8.0
 	google.golang.org/api v0.126.0
