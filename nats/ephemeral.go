@@ -123,22 +123,20 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 	}); err != nil {
 		return nil, err
 	}
-	sub, err := config.JetStream.PullSubscribe(
-		config.FilterSubject,
-		"", // ephemeral durable must be set to empty string to make it ephemeral
-		nats.MaxAckPending(config.MaxAckPending),
-		nats.ManualAck(),
-		nats.AckExplicit(),
-		nats.Description(config.ConsumerDescription),
-		config.Deliver,
-	)
-	if err != nil {
-		return nil, err
-	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:            config.Context,
-		logger:         config.Logger,
-		sub:            sub,
+		ctx:    config.Context,
+		logger: config.Logger.WithPrefix("[ephemeral/" + config.FilterSubject + "]"),
+		newsub: func() (*nats.Subscription, error) {
+			return config.JetStream.PullSubscribe(
+				config.FilterSubject,
+				"", // ephemeral durable must be set to empty string to make it ephemeral
+				nats.MaxAckPending(config.MaxAckPending),
+				nats.ManualAck(),
+				nats.AckExplicit(),
+				nats.Description(config.ConsumerDescription),
+				config.Deliver,
+			)
+		},
 		handler:        config.Handler,
 		maxfetch:       config.MaxDeliver,
 		extendInterval: config.AckWait,

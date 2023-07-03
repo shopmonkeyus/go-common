@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -241,39 +242,43 @@ func TestEphemeralConsumer(t *testing.T) {
 	assert.NoError(t, err, "failed to create stream")
 	var received1 string
 	var msgid1 string
+	var wg sync.WaitGroup
 	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		defer wg.Done()
 		_msgid := msg.Header.Get("Nats-Msg-Id")
 		t.Log("1 received:", string(buf), "msgid:", _msgid)
 		received1 = string(buf)
 		msgid1 = _msgid
-		msg.AckSync()
-		return nil
+		return msg.AckSync()
 	}
+	wg.Add(1)
 	sub1, err := NewEphemeralConsumer(log, js, queue, subject, handler1)
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
 	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
 	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
 	assert.NoError(t, err, "failed to publish")
-	time.Sleep(time.Millisecond * 100)
+	wg.Wait()
 	assert.Equal(t, _msgid1, received1, "message1 didnt match")
 	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
 	sub1.Close()
 	received1 = ""
 	msgid1 = ""
+	wg.Add(1)
 	sub2, err := NewEphemeralConsumer(log, js, queue, subject, handler1, WithEphemeralDelivery(nats.DeliverAllPolicy))
 	assert.NoError(t, err, "failed to create consumer 2")
 	assert.NotNil(t, sub2, "sub2 result was nil")
-	time.Sleep(time.Millisecond * 100)
+	wg.Wait()
 	assert.Equal(t, _msgid1, received1, "message1 didnt match")
 	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
 	sub2.Close()
 	received1 = ""
 	msgid1 = ""
+	wg.Add(1)
 	sub3, err := NewEphemeralConsumer(log, js, queue, subject, handler1, WithEphemeralDelivery(nats.DeliverAllPolicy))
 	assert.NoError(t, err, "failed to create consumer 3")
 	assert.NotNil(t, sub3, "sub3 result was nil")
-	time.Sleep(time.Millisecond * 100)
+	wg.Wait()
 	assert.Equal(t, _msgid1, received1, "message1 didnt match")
 	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
 	ci := <-js.Consumers(queue)

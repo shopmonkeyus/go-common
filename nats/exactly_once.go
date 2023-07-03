@@ -128,22 +128,20 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 			return nil, err
 		}
 	}
-	sub, err := config.JetStream.PullSubscribe(
-		config.FilterSubject,
-		config.DurableName,
-		nats.MaxAckPending(1),
-		nats.ManualAck(),
-		nats.AckExplicit(),
-		nats.Description(config.ConsumerDescription),
-		config.Deliver,
-	)
-	if err != nil {
-		return nil, err
-	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:        config.Context,
-		logger:     config.Logger,
-		sub:        sub,
+		ctx:    config.Context,
+		logger: config.Logger.WithPrefix("[exactlyonce/" + config.DurableName + "]"),
+		newsub: func() (*nats.Subscription, error) {
+			return config.JetStream.PullSubscribe(
+				config.FilterSubject,
+				config.DurableName,
+				nats.MaxAckPending(1),
+				nats.ManualAck(),
+				nats.AckExplicit(),
+				nats.Description(config.ConsumerDescription),
+				config.Deliver,
+			)
+		},
 		handler:    config.Handler,
 		maxfetch:   1,
 		disableLog: config.DisableSubLogging,

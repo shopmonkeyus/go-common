@@ -40,15 +40,15 @@ func CopyDir(src string, dst string) error {
 	var srcinfo os.FileInfo
 
 	if srcinfo, err = os.Stat(src); err != nil {
-		return fmt.Errorf("error reading %s: %s", src, err)
+		return fmt.Errorf("error reading %s: %w", src, err)
 	}
 
 	if err = os.MkdirAll(dst, srcinfo.Mode()); err != nil {
-		return fmt.Errorf("error mkdir %s: %s", dst, err)
+		return fmt.Errorf("error mkdir %s: %w", dst, err)
 	}
 
 	if fds, err = os.ReadDir(src); err != nil {
-		return fmt.Errorf("error readdir %s: %s", src, err)
+		return fmt.Errorf("error readdir %s: %w", src, err)
 	}
 	for _, fd := range fds {
 		srcfp := path.Join(src, fd.Name())
@@ -56,11 +56,11 @@ func CopyDir(src string, dst string) error {
 
 		if fd.IsDir() {
 			if err = CopyDir(srcfp, dstfp); err != nil {
-				return fmt.Errorf("error copying directory from %s to %s: %s", srcfp, dstfp, err)
+				return fmt.Errorf("error copying directory from %s to %s: %w", srcfp, dstfp, err)
 			}
 		} else {
 			if _, err = CopyFile(srcfp, dstfp); err != nil {
-				return fmt.Errorf("error copying file from %s to %s: %s", srcfp, dstfp, err)
+				return fmt.Errorf("error copying file from %s to %s: %w", srcfp, dstfp, err)
 			}
 		}
 	}

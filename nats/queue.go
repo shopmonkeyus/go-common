@@ -137,22 +137,20 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 			return nil, err
 		}
 	}
-	sub, err := config.JetStream.PullSubscribe(
-		config.FilterSubject,
-		config.DurableName,
-		nats.MaxAckPending(config.MaxAckPending),
-		nats.ManualAck(),
-		nats.AckExplicit(),
-		nats.Description(config.ConsumerDescription),
-		config.Deliver,
-	)
-	if err != nil {
-		return nil, err
-	}
 	eos := newSubscriber(subscriberOpts{
-		ctx:        config.Context,
-		logger:     config.Logger,
-		sub:        sub,
+		ctx:    config.Context,
+		logger: config.Logger.WithPrefix("[queue/" + config.DurableName + "]"),
+		newsub: func() (*nats.Subscription, error) {
+			return config.JetStream.PullSubscribe(
+				config.FilterSubject,
+				config.DurableName,
+				nats.MaxAckPending(config.MaxAckPending),
+				nats.ManualAck(),
+				nats.AckExplicit(),
+				nats.Description(config.ConsumerDescription),
+				config.Deliver,
+			)
+		},
 		handler:    config.Handler,
 		maxfetch:   config.MaxDeliver,
 		disableLog: config.DisableSubLogging,

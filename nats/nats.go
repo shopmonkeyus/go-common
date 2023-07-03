@@ -26,6 +26,7 @@ type Subscriber interface {
 
 type subscriber struct {
 	logger          logger.Logger
+	newsub          func() (*nats.Subscription, error)
 	sub             *nats.Subscription
 	handler         Handler
 	shutdown        bool
@@ -46,7 +47,7 @@ type subscriber struct {
 type subscriberOpts struct {
 	ctx            context.Context
 	logger         logger.Logger
-	sub            *nats.Subscription
+	newsub         func() (*nats.Subscription, error)
 	handler        Handler
 	extendInterval time.Duration
 	maxfetch       int
@@ -65,13 +66,17 @@ func newSubscriber(opts subscriberOpts) *subscriber {
 	}
 	sub := &subscriber{
 		logger:         opts.logger,
-		sub:            opts.sub,
+		newsub:         opts.newsub,
 		handler:        opts.handler,
 		ctx:            _ctx,
 		cancel:         cancel,
 		extendInterval: opts.extendInterval,
 		maxfetch:       opts.maxfetch,
 		disableLog:     opts.disableLog,
+	}
+	s, err := opts.newsub()
+	if err == nil {
+		sub.sub = s
 	}
 	go sub.extender()
 	go sub.run()
@@ -134,9 +139,26 @@ func (s *subscriber) run() {
 	for {
 		s.lock.Lock()
 		shutdown := s.shutdown
+		hassub := s.sub != nil
 		s.lock.Unlock()
 		if shutdown {
 			return
+		}
+		if !hassub {
+			s.logger.Trace("need to create a new subscription")
+			sub, err := s.newsub()
+			if err != nil {
+				if errors.Is(err, nats.ErrTimeout) || errors.Is(err, nats.ErrConnectionClosed) {
+					time.Sleep(time.Second)
+					continue
+				}
+				s.logger.Error("error creating new subscription: %s", err)
+				time.Sleep(time.Second)
+				continue
+			}
+			s.lock.Lock()
+			s.sub = sub
+			s.lock.Unlock()
 		}
 		c, cf := context.WithTimeout(s.ctx, time.Minute)
 		msgs, err := s.sub.Fetch(s.maxfetch, nats.Context(c))
@@ -157,11 +179,18 @@ func (s *subscriber) run() {
 				time.Sleep(time.Microsecond * 10)
 				continue
 			}
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "connection closed") {
+			if errors.Is(err, nats.ErrConnectionClosed) || errors.Is(err, nats.ErrDisconnected) {
+				s.lock.Lock()
+				s.sub = nil
+				s.lock.Unlock()
+				time.Sleep(time.Second)
 				continue
 			}
-			s.logger.Error("subscription fetch error: %s", errMsg)
+			if errors.Is(err, nats.ErrTimeout) {
+				time.Sleep(time.Microsecond * 10)
+				continue
+			}
+			s.logger.Error("subscription fetch error: %s", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -175,7 +204,7 @@ func (s *subscriber) run() {
 				continue // keep going so that we nack all the messages
 			}
 			s.lock.Unlock()
-			msgid := msg.Header.Get("Nats-Msg-Id")
+			msgid := msg.Header.Get(nats.MsgIdHdr)
 			if msgid == "" {
 				msgid = gstring.SHA256(msg.Data)
 			}
