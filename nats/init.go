@@ -18,11 +18,11 @@ func NewNats(log logger.Logger, name string, hosts string, credentials gnats.Opt
 		_opts...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to NATS hosts at %s. %s", hosts, err)
+		return nil, fmt.Errorf("error connecting to NATS hosts at %s. %w", hosts, err)
 	}
 	d, err := nc.RTT()
 	if err != nil {
-		return nil, fmt.Errorf("error testing round trip to NATS hosts at %s. %s", hosts, err)
+		return nil, fmt.Errorf("error testing round trip to NATS hosts at %s. %w", hosts, err)
 	}
 	log.Debug("NATS ping rtt: %v, host: %s (%s)", d, nc.ConnectedUrl(), nc.ConnectedServerName())
 	return nc, nil
