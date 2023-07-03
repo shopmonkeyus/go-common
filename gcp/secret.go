@@ -15,7 +15,7 @@ type Secret *secretmanagerpb.Secret
 func FetchSecret(ctx context.Context, projectID string, name string) ([]byte, error) {
 	client, err := secretmanager.NewClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup secret client: %v", err)
+		return nil, fmt.Errorf("failed to setup secret client: %w", err)
 	}
 	defer client.Close()
 	accessRequest := &secretmanagerpb.AccessSecretVersionRequest{
@@ -23,7 +23,7 @@ func FetchSecret(ctx context.Context, projectID string, name string) ([]byte, er
 	}
 	result, err := client.AccessSecretVersion(ctx, accessRequest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to access secret %s version: %v", name, err)
+		return nil, fmt.Errorf("failed to access secret %s version: %w", name, err)
 	}
 	return result.Payload.Data, nil
 }
@@ -31,7 +31,7 @@ func FetchSecret(ctx context.Context, projectID string, name string) ([]byte, er
 func WriteSecret(ctx context.Context, projectID string, name string, sercretValue []byte) error {
 	client, err := secretmanager.NewClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to setup secret client: %v", err)
+		return fmt.Errorf("failed to setup secret client: %w", err)
 	}
 	defer client.Close()
 	createRequest := &secretmanagerpb.CreateSecretRequest{
@@ -47,7 +47,7 @@ func WriteSecret(ctx context.Context, projectID string, name string, sercretValu
 	}
 	_, err = client.CreateSecret(ctx, createRequest)
 	if err != nil && !strings.Contains(err.Error(), "AlreadyExists") {
-		return fmt.Errorf("failed to create secret: %v", err)
+		return fmt.Errorf("failed to create secret: %w", err)
 	}
 
 	addVersionRequest := &secretmanagerpb.AddSecretVersionRequest{
@@ -59,7 +59,7 @@ func WriteSecret(ctx context.Context, projectID string, name string, sercretValu
 
 	_, err = client.AddSecretVersion(ctx, addVersionRequest)
 	if err != nil {
-		return fmt.Errorf("failed to create secret version: %v", err)
+		return fmt.Errorf("failed to create secret version: %w", err)
 	}
 
 	return nil

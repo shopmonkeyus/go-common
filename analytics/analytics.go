@@ -265,7 +265,7 @@ func (t *analytics) run() {
 				locationId = "NONE"
 			}
 			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s", companyId, locationId, config.event.Name))
-			msg.Header.Set("Nats-Msg-Id", config.MessageId)
+			msg.Header.Set(nats.MsgIdHdr, config.MessageId)
 			if companyId != "NONE" {
 				msg.Header.Set("x-company-id", companyId)
 			}

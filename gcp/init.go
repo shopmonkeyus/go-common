@@ -18,7 +18,7 @@ func FetchProjectID() (string, error) {
 	ctx := context.Background()
 	credentials, err := google.FindDefaultCredentials(ctx, compute.ComputeScope)
 	if err != nil {
-		return "", fmt.Errorf("error finding default google credentials: %s", err)
+		return "", fmt.Errorf("error finding default google credentials: %w", err)
 	}
 	return credentials.ProjectID, nil
 }
