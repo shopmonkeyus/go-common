@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -180,12 +181,12 @@ func (s *subscriber) run() {
 				continue
 			}
 			if errors.Is(err, nats.ErrConnectionClosed) || errors.Is(err, nats.ErrDisconnected) {
-				s.lock.Lock()
-				s.sub = nil
-				s.lock.Unlock()
-				time.Sleep(time.Second)
-				continue
+				s.logger.Error("restarting to reconnect to nats...👋: %s", err)
+				// lost outer nats connection so restart
+				// otherwise we loop forever trying to reconnect
+				os.Exit(1)
 			}
+
 			if errors.Is(err, nats.ErrTimeout) {
 				time.Sleep(time.Microsecond * 10)
 				continue
