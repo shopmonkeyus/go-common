@@ -431,5 +431,5 @@ func TestDiffConfig(t *testing.T) {
 		Replicas:      1,
 	})
 	assert.False(t, ok)
-	assert.Equal(t, "test.* != test.>", msg)
+	assert.Equal(t, "filter subject: test.* != test.>", msg)
 }

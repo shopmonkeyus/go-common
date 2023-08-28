@@ -271,31 +271,31 @@ func isConsumerNameAlreadyExistsError(err error) bool {
 
 func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) (string, bool) {
 	if a.AckPolicy != b.AckPolicy {
-		return fmt.Sprintf("%v != %v", a.AckPolicy, b.AckPolicy), false
+		return fmt.Sprintf("ack policy: %v != %v", a.AckPolicy, b.AckPolicy), false
 	}
 	if a.DeliverPolicy != b.DeliverPolicy {
-		return fmt.Sprintf("%v != %v", a.DeliverPolicy, b.DeliverPolicy), false
+		return fmt.Sprintf("deliver policy: %v != %v", a.DeliverPolicy, b.DeliverPolicy), false
 	}
 	if a.Description != b.Description {
-		return fmt.Sprintf("%v != %v", a.Description, b.Description), false
+		return fmt.Sprintf("description: %v != %v", a.Description, b.Description), false
 	}
 	if a.Durable != b.Durable {
-		return fmt.Sprintf("%v != %v", a.Durable, b.Durable), false
+		return fmt.Sprintf("durable: %v != %v", a.Durable, b.Durable), false
 	}
 	if a.FilterSubject != b.FilterSubject {
-		return fmt.Sprintf("%v != %v", a.FilterSubject, b.FilterSubject), false
+		return fmt.Sprintf("filter subject: %v != %v", a.FilterSubject, b.FilterSubject), false
 	}
 	if a.MaxAckPending != b.MaxAckPending {
-		return fmt.Sprintf("%v != %v", a.MaxAckPending, b.MaxAckPending), false
+		return fmt.Sprintf("max ack pending: %v != %v", a.MaxAckPending, b.MaxAckPending), false
 	}
 	if a.MaxDeliver != b.MaxDeliver {
-		return fmt.Sprintf("%v != %v", a.MaxDeliver, b.MaxDeliver), false
+		return fmt.Sprintf("max deliver: %v != %v", a.MaxDeliver, b.MaxDeliver), false
 	}
 	if a.Name != b.Name {
-		return fmt.Sprintf("%v != %v", a.Name, b.Name), false
+		return fmt.Sprintf("name: %v != %v", a.Name, b.Name), false
 	}
 	if a.Replicas != b.Replicas {
-		return fmt.Sprintf("%v != %v", a.Replicas, b.Replicas), false
+		return fmt.Sprintf("replicas: %v != %v", a.Replicas, b.Replicas), false
 	}
 	return "", true
 }

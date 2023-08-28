@@ -122,6 +122,7 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 		DeliverPolicy: config.DeliverPolicy,
 		MaxDeliver:    config.MaxDeliver,
 		Replicas:      config.Replicas,
+		Name:          config.DurableName,
 	}
 	if ci != nil {
 		msg, ok := diffConfig(ci.Config, *cconfig)
