@@ -229,7 +229,7 @@ func (s *subscriber) run() {
 			if gzipped {
 				data, err = compress.Gunzip(data)
 			} else if msgpacked {
-				var o map[string]any
+				var o any
 				err = msgpack.Unmarshal(data, &o)
 				if err == nil {
 					data, err = json.Marshal(o)
