@@ -17,7 +17,7 @@ import (
 
 func RunTestServer(js bool) *server.Server {
 	opts := natsserver.DefaultTestOptions
-	opts.Port = 8222
+	opts.Port = 8221
 	opts.Cluster.Name = "testing"
 	opts.JetStream = js
 	return natsserver.RunServer(&opts)
@@ -27,7 +27,7 @@ func TestAnalyticsBasic(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := gnats.NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := gnats.NewNats(log, "test", "nats://localhost:8221", nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	defer n.Close()
@@ -80,7 +80,7 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := gnats.NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := gnats.NewNats(log, "test", "nats://localhost:8221", nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	defer n.Close()
@@ -145,7 +145,7 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := gnats.NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := gnats.NewNats(log, "test", "nats://localhost:8221", nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	defer n.Close()
@@ -210,7 +210,7 @@ func TestAnalyticsClosedErorr(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := gnats.NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := gnats.NewNats(log, "test", "nats://localhost:8221", nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	defer n.Close()

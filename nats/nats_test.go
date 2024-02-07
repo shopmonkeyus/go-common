@@ -1,6 +1,7 @@
 package nats
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
 	"github.com/stretchr/testify/assert"
+	"github.com/vmihailenco/msgpack"
 )
 
 func RunTestServer(js bool) *server.Server {
@@ -92,6 +94,56 @@ func TestExactlyOnceConsumer(t *testing.T) {
 	assert.Equal(t, "hi", received, "message didnt match")
 	assert.Equal(t, _msgid, msgid, "msgid didnt match")
 	ci, err := js.ConsumerInfo(queue, "test")
+	assert.NotNil(t, ci)
+	assert.NoError(t, err)
+	assert.Equal(t, "exactly once consumer for "+queue, ci.Config.Description)
+	sub.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("streammsg%v", time.Now().Unix())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var received string
+	var msgid string
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := msg.Header.Get("Nats-Msg-Id")
+		t.Log("received:", string(buf), "msgid:", _msgid)
+		received = string(buf)
+		msgid = _msgid
+		msg.AckSync()
+		return nil
+	}
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test2", queue+".*", handler, WithExactlyOnceReplicas(1))
+	assert.NoError(t, err, "failed to create consumer")
+	assert.NotNil(t, sub, "sub result was nil")
+	_msgid := fmt.Sprintf("%v", time.Now().Unix())
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+	assert.NoError(t, enc.Encode("hi"))
+	msg := nats.NewMsg(queue + ".test")
+	msg.Data = buf.Bytes()
+	msg.Header.Set("content-encoding", "msgpack")
+	_, err = js.PublishMsg(msg, nats.MsgId(_msgid))
+	assert.NoError(t, err, "failed to publish")
+	time.Sleep(time.Second)
+	assert.Equal(t, "hi", received, "message didnt match")
+	assert.Equal(t, _msgid, msgid, "msgid didnt match")
+	ci, err := js.ConsumerInfo(queue, "test2")
 	assert.NotNil(t, ci)
 	assert.NoError(t, err)
 	assert.Equal(t, "exactly once consumer for "+queue, ci.Config.Description)
