@@ -13,6 +13,7 @@ import (
 	"github.com/shopmonkeyus/go-common/compress"
 	"github.com/shopmonkeyus/go-common/logger"
 	gstring "github.com/shopmonkeyus/go-common/string"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 const maxDeliveryAttempts = 10
@@ -220,11 +221,18 @@ func (s *subscriber) run() {
 			}
 			encoding := msg.Header.Get("content-encoding")
 			gzipped := encoding == "gzip/json"
+			msgpacked := encoding == "msgpack"
 			started := time.Now()
 			var err error
 			data := msg.Data
 			if gzipped {
 				data, err = compress.Gunzip(data)
+			} else if msgpacked {
+				var mbuf []byte
+				err = msgpack.Unmarshal(data, &mbuf)
+				if err == nil {
+					data = mbuf
+				}
 			}
 			if err != nil {
 				s.logger.Error("error uncompressing message: %v (%s/%d). %s", msg.Subject, msgid, md.Sequence.Consumer, err)
