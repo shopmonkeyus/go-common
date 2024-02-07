@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -228,10 +229,10 @@ func (s *subscriber) run() {
 			if gzipped {
 				data, err = compress.Gunzip(data)
 			} else if msgpacked {
-				var mbuf []byte
-				err = msgpack.Unmarshal(data, &mbuf)
+				var o any
+				err = msgpack.Unmarshal(data, &o)
 				if err == nil {
-					data = mbuf
+					data, err = json.Marshal(o)
 				}
 			}
 			if err != nil {
