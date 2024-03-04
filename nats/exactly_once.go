@@ -154,7 +154,6 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 				nats.AckExplicit(),
 				nats.Description(config.ConsumerDescription),
 				config.Deliver,
-				nats.StartTime(config.OptStartTime),
 			)
 		},
 		handler:    config.Handler,
