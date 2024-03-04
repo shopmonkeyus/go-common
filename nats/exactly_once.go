@@ -103,7 +103,7 @@ func WithExactlyOnceConsumerDescription(description string) ExactlyOnceOptsFunc 
 	}
 }
 
-func WithByStartTimePolicy(start time.Time) ExactlyOnceOptsFunc {
+func WithExactlyOnceByStartTimePolicy(start time.Time) ExactlyOnceOptsFunc {
 	return func(config *exactlyOnceConsumerConfig) error {
 		config.Deliver = nil
 		config.DeliverPolicy = nats.DeliverByStartTimePolicy
