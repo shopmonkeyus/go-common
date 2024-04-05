@@ -15,6 +15,10 @@ const (
 	Dev     Environment = "dev"
 )
 
+func (e Environment) String() string {
+	return string(e)
+}
+
 func NewEnvironment(env string) (Environment, error) {
 	return parseEnvironment(env)
 }
