@@ -41,7 +41,7 @@ func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stre
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
-		MaxRequestBatch:     1000,
+		MaxRequestBatch:     4096,
 		AckWait:             time.Second * 30,
 	}
 }

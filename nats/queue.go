@@ -43,7 +43,7 @@ func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream s
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
 		Replicas:            3,
-		MaxRequestBatch:     1000,
+		MaxRequestBatch:     4096,
 	}
 }
 
