@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
@@ -24,6 +25,7 @@ type queueConsumerConfig struct {
 	Replicas            int
 	DisableSubLogging   bool
 	MaxRequestBatch     int
+	AckWait             time.Duration
 }
 
 type QueueOptsFunc func(config *queueConsumerConfig) error
@@ -44,6 +46,7 @@ func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream s
 		MaxAckPending:       1000,
 		Replicas:            3,
 		MaxRequestBatch:     4096,
+		AckWait:             time.Second * 30,
 	}
 }
 
@@ -83,6 +86,14 @@ func WithQueueMaxDeliver(max int) QueueOptsFunc {
 func WithQueueMaxAckPending(max int) QueueOptsFunc {
 	return func(config *queueConsumerConfig) error {
 		config.MaxAckPending = max
+		return nil
+	}
+}
+
+// WithQueueAckWait set the maximum ack wait duration value
+func WithQueueAckWait(max time.Duration) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.AckWait = max
 		return nil
 	}
 }
@@ -134,6 +145,7 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 		Replicas:        config.Replicas,
 		Name:            config.DurableName,
 		MaxRequestBatch: config.MaxRequestBatch,
+		AckWait:         config.AckWait,
 	}
 	if ci != nil {
 		msg, ok := diffConfig(ci.Config, *cconfig)
@@ -165,7 +177,7 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 			)
 		},
 		handler:    config.Handler,
-		maxfetch:   config.MaxDeliver,
+		maxfetch:   config.MaxRequestBatch,
 		disableLog: config.DisableSubLogging,
 	})
 	return eos, nil
