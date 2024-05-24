@@ -150,7 +150,7 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 			)
 		},
 		handler:        config.Handler,
-		maxfetch:       config.MaxDeliver,
+		maxfetch:       config.MaxRequestBatch,
 		extendInterval: config.AckWait,
 		disableLog:     config.DisableSubLogging,
 	})
