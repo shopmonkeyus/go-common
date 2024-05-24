@@ -23,6 +23,7 @@ type queueConsumerConfig struct {
 	MaxDeliver          int
 	Replicas            int
 	DisableSubLogging   bool
+	MaxRequestBatch     int
 }
 
 type QueueOptsFunc func(config *queueConsumerConfig) error
@@ -42,6 +43,7 @@ func defaultQueueConfig(logger logger.Logger, js nats.JetStreamContext, stream s
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
 		Replicas:            3,
+		MaxRequestBatch:     1000,
 	}
 }
 
@@ -57,6 +59,14 @@ func WithQueueDisableSubscriberLogging() QueueOptsFunc {
 func WithQueueReplicas(replicas int) QueueOptsFunc {
 	return func(config *queueConsumerConfig) error {
 		config.Replicas = replicas
+		return nil
+	}
+}
+
+// WithQueueMaxRequestBatch set the maximum number of records to fetch
+func WithQueueMaxRequestBatch(max int) QueueOptsFunc {
+	return func(config *queueConsumerConfig) error {
+		config.MaxRequestBatch = max
 		return nil
 	}
 }
@@ -114,15 +124,16 @@ func WithQueueConsumerDescription(description string) QueueOptsFunc {
 func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) {
 	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.DurableName)
 	cconfig := &nats.ConsumerConfig{
-		Durable:       config.DurableName,
-		Description:   config.ConsumerDescription,
-		FilterSubject: config.FilterSubject,
-		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: config.MaxAckPending,
-		DeliverPolicy: config.DeliverPolicy,
-		MaxDeliver:    config.MaxDeliver,
-		Replicas:      config.Replicas,
-		Name:          config.DurableName,
+		Durable:         config.DurableName,
+		Description:     config.ConsumerDescription,
+		FilterSubject:   config.FilterSubject,
+		AckPolicy:       nats.AckExplicitPolicy,
+		MaxAckPending:   config.MaxAckPending,
+		DeliverPolicy:   config.DeliverPolicy,
+		MaxDeliver:      config.MaxDeliver,
+		Replicas:        config.Replicas,
+		Name:            config.DurableName,
+		MaxRequestBatch: config.MaxRequestBatch,
 	}
 	if ci != nil {
 		msg, ok := diffConfig(ci.Config, *cconfig)
@@ -150,6 +161,7 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 				nats.AckExplicit(),
 				nats.Description(config.ConsumerDescription),
 				config.Deliver,
+				nats.MaxRequestBatch(config.MaxRequestBatch),
 			)
 		},
 		handler:    config.Handler,

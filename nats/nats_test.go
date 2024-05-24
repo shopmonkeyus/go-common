@@ -485,3 +485,31 @@ func TestDiffConfig(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, "filter subject: test.* != test.>", msg)
 }
+
+func TestDiffConfig2(t *testing.T) {
+	msg, ok := diffConfig(nats.ConsumerConfig{
+		Durable:         "test",
+		Name:            "test",
+		Description:     "",
+		FilterSubject:   "test.*",
+		AckPolicy:       nats.AckExplicitPolicy,
+		DeliverPolicy:   nats.DeliverNewPolicy,
+		MaxDeliver:      1,
+		MaxAckPending:   1000,
+		Replicas:        1,
+		MaxRequestBatch: 10,
+	}, nats.ConsumerConfig{
+		Durable:         "test",
+		Name:            "test",
+		Description:     "",
+		FilterSubject:   "test.*",
+		AckPolicy:       nats.AckExplicitPolicy,
+		DeliverPolicy:   nats.DeliverNewPolicy,
+		MaxDeliver:      1,
+		MaxAckPending:   1000,
+		Replicas:        1,
+		MaxRequestBatch: 100,
+	})
+	assert.False(t, ok)
+	assert.Equal(t, "max_fetch: 10 != 100", msg)
+}
