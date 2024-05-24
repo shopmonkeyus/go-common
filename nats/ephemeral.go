@@ -23,6 +23,7 @@ type ephemeralConsumerConfig struct {
 	MaxAckPending       int
 	AckWait             time.Duration
 	DisableSubLogging   bool
+	MaxRequestBatch     int
 }
 
 type EphemeralOptsFunc func(config *ephemeralConsumerConfig) error
@@ -40,6 +41,7 @@ func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stre
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
 		MaxAckPending:       1000,
+		MaxRequestBatch:     4096,
 		AckWait:             time.Second * 30,
 	}
 }
@@ -110,16 +112,25 @@ func WithEphemeralAckWait(duration time.Duration) EphemeralOptsFunc {
 	}
 }
 
+// WithEphemeralMaxRequestBatch set the maximum number of records to fetch
+func WithEphemeralMaxRequestBatch(max int) EphemeralOptsFunc {
+	return func(config *ephemeralConsumerConfig) error {
+		config.MaxRequestBatch = max
+		return nil
+	}
+}
+
 func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber, error) {
 	if _, err := config.JetStream.AddConsumer(config.StreamName, &nats.ConsumerConfig{
-		Description:   config.ConsumerDescription,
-		Durable:       "",
-		FilterSubject: config.FilterSubject,
-		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: config.MaxAckPending,
-		DeliverPolicy: config.DeliverPolicy,
-		MaxDeliver:    config.MaxDeliver,
-		AckWait:       config.AckWait,
+		Description:     config.ConsumerDescription,
+		Durable:         "",
+		FilterSubject:   config.FilterSubject,
+		AckPolicy:       nats.AckExplicitPolicy,
+		MaxAckPending:   config.MaxAckPending,
+		DeliverPolicy:   config.DeliverPolicy,
+		MaxDeliver:      config.MaxDeliver,
+		AckWait:         config.AckWait,
+		MaxRequestBatch: config.MaxRequestBatch,
 	}); err != nil {
 		return nil, err
 	}
@@ -135,6 +146,7 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 				nats.AckExplicit(),
 				nats.Description(config.ConsumerDescription),
 				config.Deliver,
+				nats.MaxRequestBatch(config.MaxRequestBatch),
 			)
 		},
 		handler:        config.Handler,

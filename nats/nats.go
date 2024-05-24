@@ -306,5 +306,8 @@ func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) (string, bool) {
 	if a.Replicas != b.Replicas {
 		return fmt.Sprintf("replicas: %v != %v", a.Replicas, b.Replicas), false
 	}
+	if a.MaxRequestBatch != b.MaxRequestBatch {
+		return fmt.Sprintf("max_fetch: %v != %v", a.MaxRequestBatch, b.MaxRequestBatch), false
+	}
 	return "", true
 }
