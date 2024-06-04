@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
@@ -18,6 +19,7 @@ type exactlyOnceConsumerConfig struct {
 	FilterSubject       string
 	Handler             Handler
 	DeliverPolicy       nats.DeliverPolicy
+	OptStartTime        time.Time `json:"start_time,omitempty"`
 	Deliver             nats.SubOpt
 	MaxDeliver          int
 	Replicas            int
@@ -101,6 +103,15 @@ func WithExactlyOnceConsumerDescription(description string) ExactlyOnceOptsFunc 
 	}
 }
 
+func WithExactlyOnceByStartTimePolicy(start time.Time) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.Deliver = nil
+		config.DeliverPolicy = nats.DeliverByStartTimePolicy
+		config.OptStartTime = start
+		return nil
+	}
+}
+
 func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscriber, error) {
 	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.DurableName)
 	cconfig := &nats.ConsumerConfig{
@@ -113,6 +124,9 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 		MaxDeliver:    1,
 		DeliverPolicy: config.DeliverPolicy,
 		Replicas:      config.Replicas,
+	}
+	if !config.OptStartTime.IsZero() {
+		cconfig.OptStartTime = &config.OptStartTime
 	}
 	if ci != nil {
 		msg, ok := diffConfig(ci.Config, *cconfig)
