@@ -54,7 +54,7 @@ type consoleLogger struct {
 	errorLevelColor   string
 	errorMessageColor string
 	sink              Sink
-	logLevel		  LogLevel
+	logLevel          LogLevel
 }
 
 var _ Logger = (*consoleLogger)(nil)
@@ -186,5 +186,6 @@ func (c *consoleLogger) SetLogLevel(level LogLevel) {
 
 // NewConsoleLogger returns a new Logger instance which will log to the console
 func NewConsoleLogger() Logger {
-	return (&consoleLogger{}).Clone(nil, nil)
+
+	return (&consoleLogger{logLevel: LevelInfo}).Clone(nil, nil)
 }
