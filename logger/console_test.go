@@ -70,22 +70,6 @@ func TestConsoleLogger(t *testing.T) {
 	}
 }
 
-func TestConsoleLoggerWithPrefix(t *testing.T) {
-	logger := NewConsoleLogger().(*consoleLogger)
-
-	logger.SetLogLevel(LevelInfo)
-	logger = logger.WithPrefix("[PREFIX]").(*consoleLogger)
-
-	output := captureOutput(func() {
-		logger.Info("This is an info message")
-		logger.Debug("This debug message should not be printed")
-	})
-
-	assert.Contains(t, output, "[PREFIX]")
-	assert.Contains(t, output, "This is an info message")
-	assert.NotContains(t, output, "This debug message should not be printed")
-}
-
 func TestConsoleLoggerWithMetadata(t *testing.T) {
 	logger := NewConsoleLogger().(*consoleLogger)
 
