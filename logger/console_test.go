@@ -89,106 +89,151 @@ func TestConsoleLoggerWithMetadata(t *testing.T) {
 }
 
 func TestConsoleLoggerSinkTraceLevel(t *testing.T) {
-	sink := &testSink{}
-	logger := NewConsoleLogger().(*consoleLogger).WithSink(sink).(*consoleLogger)
+	logger := NewConsoleLogger().(*consoleLogger)
 	logger.SetLogLevel(LevelTrace)
 
-	logger.Trace("This is a trace message")
-	assert.Contains(t, string(sink.buf), "This is a trace message")
+	output := captureOutput(func() {
+		logger.Trace("This is a trace message")
+	})
+	assert.Contains(t, output, "This is a trace message")
 
-	logger.Debug("This is a debug message")
-	assert.Contains(t, string(sink.buf), "This is a debug message")
+	output = captureOutput(func() {
+		logger.Debug("This is a debug message")
+	})
+	assert.Contains(t, output, "This is a debug message")
 
-	logger.Info("This is an info message")
-	assert.Contains(t, string(sink.buf), "This is an info message")
+	output = captureOutput(func() {
+		logger.Info("This is an info message")
+	})
+	assert.Contains(t, output, "This is an info message")
 
-	logger.Warn("This is a warn message")
-	assert.Contains(t, string(sink.buf), "This is a warn message")
+	output = captureOutput(func() {
+		logger.Warn("This is a warn message")
+	})
+	assert.Contains(t, output, "This is a warn message")
 
-	logger.Error("This is an error message")
-	assert.Contains(t, string(sink.buf), "This is an error message")
+	output = captureOutput(func() {
+		logger.Error("This is an error message")
+	})
+	assert.Contains(t, output, "This is an error message")
 }
 
 func TestConsoleLoggerSinkDebugLevel(t *testing.T) {
-	sink := &testSink{}
-	logger := NewConsoleLogger().(*consoleLogger).WithSink(sink).(*consoleLogger)
+	logger := NewConsoleLogger().(*consoleLogger)
 	logger.SetLogLevel(LevelDebug)
 
-	logger.Trace("This trace message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This trace message should not be printed")
+	output := captureOutput(func() {
+		logger.Trace("This trace message should not be printed")
+	})
+	assert.NotContains(t, output, "This trace message should not be printed")
 
-	logger.Debug("This is a debug message")
-	assert.Contains(t, string(sink.buf), "This is a debug message")
+	output = captureOutput(func() {
+		logger.Debug("This is a debug message")
+	})
+	assert.Contains(t, output, "This is a debug message")
 
-	logger.Info("This is an info message")
-	assert.Contains(t, string(sink.buf), "This is an info message")
+	output = captureOutput(func() {
+		logger.Info("This is an info message")
+	})
+	assert.Contains(t, output, "This is an info message")
 
-	logger.Warn("This is a warn message")
-	assert.Contains(t, string(sink.buf), "This is a warn message")
+	output = captureOutput(func() {
+		logger.Warn("This is a warn message")
+	})
+	assert.Contains(t, output, "This is a warn message")
 
-	logger.Error("This is an error message")
-	assert.Contains(t, string(sink.buf), "This is an error message")
+	output = captureOutput(func() {
+		logger.Error("This is an error message")
+	})
+	assert.Contains(t, output, "This is an error message")
 }
 
 func TestConsoleLoggerSinkInfoLevel(t *testing.T) {
-	sink := &testSink{}
-	logger := NewConsoleLogger().(*consoleLogger).WithSink(sink).(*consoleLogger)
+	logger := NewConsoleLogger().(*consoleLogger)
 	logger.SetLogLevel(LevelInfo)
 
-	logger.Trace("This trace message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This trace message should not be printed")
+	output := captureOutput(func() {
+		logger.Trace("This trace message should not be printed")
+	})
+	assert.NotContains(t, output, "This trace message should not be printed")
 
-	logger.Debug("This debug message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This debug message should not be printed")
+	output = captureOutput(func() {
+		logger.Debug("This debug message should not be printed")
+	})
+	assert.NotContains(t, output, "This debug message should not be printed")
 
-	logger.Info("This is an info message")
-	assert.Contains(t, string(sink.buf), "This is an info message")
+	output = captureOutput(func() {
+		logger.Info("This is an info message")
+	})
+	assert.Contains(t, output, "This is an info message")
 
-	logger.Warn("This is a warn message")
-	assert.Contains(t, string(sink.buf), "This is a warn message")
+	output = captureOutput(func() {
+		logger.Warn("This is a warn message")
+	})
+	assert.Contains(t, output, "This is a warn message")
 
-	logger.Error("This is an error message")
-	assert.Contains(t, string(sink.buf), "This is an error message")
+	output = captureOutput(func() {
+		logger.Error("This is an error message")
+	})
+	assert.Contains(t, output, "This is an error message")
 }
 
 func TestConsoleLoggerSinkWarnLevel(t *testing.T) {
-	sink := &testSink{}
-	logger := NewConsoleLogger().(*consoleLogger).WithSink(sink).(*consoleLogger)
+	logger := NewConsoleLogger().(*consoleLogger)
 	logger.SetLogLevel(LevelWarn)
 
-	logger.Trace("This trace message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This trace message should not be printed")
+	output := captureOutput(func() {
+		logger.Trace("This trace message should not be printed")
+	})
+	assert.NotContains(t, output, "This trace message should not be printed")
 
-	logger.Debug("This debug message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This debug message should not be printed")
+	output = captureOutput(func() {
+		logger.Debug("This debug message should not be printed")
+	})
+	assert.NotContains(t, output, "This debug message should not be printed")
 
-	logger.Info("This info message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This info message should not be printed")
+	output = captureOutput(func() {
+		logger.Info("This info message should not be printed")
+	})
+	assert.NotContains(t, output, "This info message should not be printed")
 
-	logger.Warn("This is a warn message")
-	assert.Contains(t, string(sink.buf), "This is a warn message")
+	output = captureOutput(func() {
+		logger.Warn("This is a warn message")
+	})
+	assert.Contains(t, output, "This is a warn message")
 
-	logger.Error("This is an error message")
-	assert.Contains(t, string(sink.buf), "This is an error message")
+	output = captureOutput(func() {
+		logger.Error("This is an error message")
+	})
+	assert.Contains(t, output, "This is an error message")
 }
 
 func TestConsoleLoggerSinkErrorLevel(t *testing.T) {
-	sink := &testSink{}
-	logger := NewConsoleLogger().(*consoleLogger).WithSink(sink).(*consoleLogger)
+	logger := NewConsoleLogger().(*consoleLogger)
 	logger.SetLogLevel(LevelError)
 
-	logger.Trace("This trace message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This trace message should not be printed")
+	output := captureOutput(func() {
+		logger.Trace("This trace message should not be printed")
+	})
+	assert.NotContains(t, output, "This trace message should not be printed")
 
-	logger.Debug("This debug message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This debug message should not be printed")
+	output = captureOutput(func() {
+		logger.Debug("This debug message should not be printed")
+	})
+	assert.NotContains(t, output, "This debug message should not be printed")
 
-	logger.Info("This info message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This info message should not be printed")
+	output = captureOutput(func() {
+		logger.Info("This info message should not be printed")
+	})
+	assert.NotContains(t, output, "This info message should not be printed")
 
-	logger.Warn("This warn message should not be printed")
-	assert.NotContains(t, string(sink.buf), "This warn message should not be printed")
+	output = captureOutput(func() {
+		logger.Warn("This warn message should not be printed")
+	})
+	assert.NotContains(t, output, "This warn message should not be printed")
 
-	logger.Error("This is an error message")
-	assert.Contains(t, string(sink.buf), "This is an error message")
+	output = captureOutput(func() {
+		logger.Error("This is an error message")
+	})
+	assert.Contains(t, output, "This is an error message")
 }
