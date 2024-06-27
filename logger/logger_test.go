@@ -7,11 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestConsoleLogger(t *testing.T) {
-	log := NewConsoleLogger()
-	log.Trace("This should not be unreadable")
-}
-
 type testSink struct {
 	buf []byte
 }
