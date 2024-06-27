@@ -187,5 +187,5 @@ func (c *consoleLogger) SetLogLevel(level LogLevel) {
 // NewConsoleLogger returns a new Logger instance which will log to the console
 func NewConsoleLogger() Logger {
 
-	return (&consoleLogger{logLevel: LevelInfo}).Clone(nil, nil)
+	return (&consoleLogger{logLevel: LevelDebug}).Clone(nil, nil)
 }
