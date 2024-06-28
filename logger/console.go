@@ -101,6 +101,7 @@ func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogg
 		errorLevelColor:   c.Default(c.errorMessageColor, RedBold),
 		errorMessageColor: c.Default(c.errorMessageColor, Red),
 		sink:              sink,
+		logLevel:          c.logLevel,
 	}
 }
 
@@ -185,7 +186,9 @@ func (c *consoleLogger) SetLogLevel(level LogLevel) {
 }
 
 // NewConsoleLogger returns a new Logger instance which will log to the console
-func NewConsoleLogger() Logger {
-
+func NewConsoleLogger(levels ...LogLevel) Logger {
+	if len(levels) > 0 {
+		return (&consoleLogger{logLevel: levels[0]}).Clone(nil, nil)
+	}
 	return (&consoleLogger{logLevel: LevelDebug}).Clone(nil, nil)
 }
