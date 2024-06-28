@@ -101,6 +101,7 @@ func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogg
 		errorLevelColor:   c.Default(c.errorMessageColor, RedBold),
 		errorMessageColor: c.Default(c.errorMessageColor, Red),
 		sink:              sink,
+		logLevel:          c.logLevel,
 	}
 }
 
