@@ -29,6 +29,17 @@ const (
 	Purple      = "\u001b[38;5;200m"
 )
 
+// LogLevel defines the level of logging
+type LogLevel int
+
+const (
+	LevelTrace LogLevel = iota
+	LevelDebug
+	LevelInfo
+	LevelWarn
+	LevelError
+)
+
 type consoleLogger struct {
 	prefixes          []string
 	metadata          map[string]interface{}
@@ -43,6 +54,7 @@ type consoleLogger struct {
 	errorLevelColor   string
 	errorMessageColor string
 	sink              Sink
+	logLevel          LogLevel
 }
 
 var _ Logger = (*consoleLogger)(nil)
@@ -114,7 +126,10 @@ func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
 	return c.Clone(kv, c.sink)
 }
 
-func (c *consoleLogger) Log(levelColor string, messageColor string, levelString string, msg string, args ...interface{}) {
+func (c *consoleLogger) Log(level LogLevel, levelColor string, messageColor string, levelString string, msg string, args ...interface{}) {
+	if level < c.logLevel {
+		return
+	}
 	_msg := fmt.Sprintf(msg, args...)
 	var prefix string
 	var suffix string
@@ -136,9 +151,9 @@ func (c *consoleLogger) Log(levelColor string, messageColor string, levelString 
 	if len(levelString) < 5 {
 		levelSuffix = strings.Repeat(" ", 5-len(levelString))
 	}
-	level := levelColor + fmt.Sprintf("[%s]%s", levelString, levelSuffix) + Reset
+	levelText := levelColor + fmt.Sprintf("[%s]%s", levelString, levelSuffix) + Reset
 	message := messageColor + _msg + Reset
-	out := fmt.Sprintf("%s %s%s%s", level, prefix, message, suffix)
+	out := fmt.Sprintf("%s %s%s%s", levelText, prefix, message, suffix)
 	log.Printf("%s\n", out)
 	if c.sink != nil {
 		c.sink.Write([]byte(ansiColorStripper.ReplaceAllString(out, "")))
@@ -146,26 +161,31 @@ func (c *consoleLogger) Log(levelColor string, messageColor string, levelString 
 }
 
 func (c *consoleLogger) Trace(msg string, args ...interface{}) {
-	c.Log(c.traceLevelColor, c.traceMessageColor, "TRACE", msg, args...)
+	c.Log(LevelTrace, c.traceLevelColor, c.traceMessageColor, "TRACE", msg, args...)
 }
 
 func (c *consoleLogger) Debug(msg string, args ...interface{}) {
-	c.Log(c.debugLevelColor, c.debugMessageColor, "DEBUG", msg, args...)
+	c.Log(LevelDebug, c.debugLevelColor, c.debugMessageColor, "DEBUG", msg, args...)
 }
 
 func (c *consoleLogger) Info(msg string, args ...interface{}) {
-	c.Log(c.infoLevelColor, c.infoMessageColor, "INFO", msg, args...)
+	c.Log(LevelInfo, c.infoLevelColor, c.infoMessageColor, "INFO", msg, args...)
 }
 
 func (c *consoleLogger) Warn(msg string, args ...interface{}) {
-	c.Log(c.warnLevelColor, c.warnMessageColor, "WARN", msg, args...)
+	c.Log(LevelWarn, c.warnLevelColor, c.warnMessageColor, "WARN", msg, args...)
 }
 
 func (c *consoleLogger) Error(msg string, args ...interface{}) {
-	c.Log(c.errorLevelColor, c.errorMessageColor, "ERROR", msg, args...)
+	c.Log(LevelError, c.errorLevelColor, c.errorMessageColor, "ERROR", msg, args...)
+}
+
+func (c *consoleLogger) SetLogLevel(level LogLevel) {
+	c.logLevel = level
 }
 
 // NewConsoleLogger returns a new Logger instance which will log to the console
 func NewConsoleLogger() Logger {
-	return (&consoleLogger{}).Clone(nil, nil)
+
+	return (&consoleLogger{logLevel: LevelDebug}).Clone(nil, nil)
 }
