@@ -24,6 +24,8 @@ type exactlyOnceConsumerConfig struct {
 	MaxDeliver          int
 	Replicas            int
 	DisableSubLogging   bool
+	AckWait             time.Duration
+	MaxRequestBatch     int
 }
 
 type ExactlyOnceOptsFunc func(config *exactlyOnceConsumerConfig) error
@@ -42,6 +44,8 @@ func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, st
 		Deliver:             nats.DeliverNew(),
 		MaxDeliver:          1,
 		Replicas:            3,
+		MaxRequestBatch:     4096,
+		AckWait:             time.Second * 30,
 	}
 }
 
@@ -112,18 +116,38 @@ func WithExactlyOnceByStartTimePolicy(start time.Time) ExactlyOnceOptsFunc {
 	}
 }
 
+// Add the ability to set the ack wait time for the consumer
+func WithExactlyOnceAckWait(ackWait time.Duration) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.AckWait = ackWait
+		return nil
+	}
+}
+
+// Add the ability to set the max fetch value for the consumer
+func WithExactlyOnceMaxRequestBatch(max int) ExactlyOnceOptsFunc {
+	return func(config *exactlyOnceConsumerConfig) error {
+		config.MaxRequestBatch = max
+		return nil
+	}
+}
+
 func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscriber, error) {
+
+	//NOTE: Potentially add option to ignore looking for config mismatch since consumerInfo can be expensive
 	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.DurableName)
 	cconfig := &nats.ConsumerConfig{
-		Durable:       config.DurableName,
-		Name:          config.DurableName,
-		Description:   config.ConsumerDescription,
-		FilterSubject: config.FilterSubject,
-		AckPolicy:     nats.AckExplicitPolicy,
-		MaxAckPending: 1,
-		MaxDeliver:    1,
-		DeliverPolicy: config.DeliverPolicy,
-		Replicas:      config.Replicas,
+		Durable:         config.DurableName,
+		Name:            config.DurableName,
+		Description:     config.ConsumerDescription,
+		FilterSubject:   config.FilterSubject,
+		AckPolicy:       nats.AckExplicitPolicy,
+		MaxAckPending:   1,
+		MaxDeliver:      1,
+		DeliverPolicy:   config.DeliverPolicy,
+		Replicas:        config.Replicas,
+		AckWait:         config.AckWait,
+		MaxRequestBatch: config.MaxRequestBatch,
 	}
 	if !config.OptStartTime.IsZero() {
 		cconfig.OptStartTime = &config.OptStartTime
@@ -154,6 +178,8 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 				nats.AckExplicit(),
 				nats.Description(config.ConsumerDescription),
 				config.Deliver,
+				nats.AckWait(config.AckWait),
+				nats.MaxRequestBatch(config.MaxRequestBatch),
 			)
 		},
 		handler:    config.Handler,
