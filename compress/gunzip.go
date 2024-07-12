@@ -1,8 +1,13 @@
 package compress
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Gunzip will unzip data and return buffer inline
@@ -20,4 +25,49 @@ func Gunzip(data []byte) ([]byte, error) {
 	}
 
 	return append([]byte(nil), resB.Bytes()...), nil
+}
+
+func TarGz(srcDir string, outfile *os.File) error {
+	zr := gzip.NewWriter(outfile)
+	tw := tar.NewWriter(zr)
+
+	baseDir := filepath.Base(srcDir)
+	// walk through every file in the folder
+	filepath.Walk(srcDir, func(file string, fi os.FileInfo, _ error) error {
+		// generate tar header
+		header, err := tar.FileInfoHeader(fi, file)
+		if err != nil {
+			return err
+		}
+
+		header.Name = baseDir + strings.Replace(filepath.ToSlash(file), srcDir, "", -1)
+
+		// write header
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		// if not a dir, write file content
+		if !fi.IsDir() {
+			data, err := os.Open(file)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(tw, data); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	// produce tar
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	// produce gzip
+	if err := zr.Close(); err != nil {
+		return err
+	}
+	//
+
+	return nil
 }
