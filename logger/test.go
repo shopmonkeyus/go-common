@@ -1,5 +1,7 @@
 package logger
 
+import "os"
+
 type TestLogEntry struct {
 	Severity  string
 	Message   string
@@ -13,7 +15,7 @@ type TestLogger struct {
 
 var _ Logger = (*TestLogger)(nil)
 
-func (c *TestLogger) WithSink(sink Sink) Logger {
+func (c *TestLogger) WithSink(sink Sink, level LogLevel) Logger {
 	return c
 }
 
@@ -58,6 +60,11 @@ func (c *TestLogger) Warn(msg string, args ...interface{}) {
 
 func (c *TestLogger) Error(msg string, args ...interface{}) {
 	c.Log("ERROR", msg, args...)
+}
+
+func (c *TestLogger) Fatal(msg string, args ...interface{}) {
+	c.Log("FATAL", msg, args...)
+	os.Exit(1)
 }
 
 // NewTestLogger returns a new Logger instance useful for testing

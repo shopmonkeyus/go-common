@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/shopmonkeyus/go-common/compress"
@@ -67,6 +66,7 @@ type ForkArgs struct {
 	SkipBundleOnSuccess bool
 	WriteToStd          bool
 	ForwardInterrupt    bool
+	LogFileSink         bool
 }
 
 type ForkResult struct {
@@ -132,6 +132,19 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		ctx = context.Background()
 	}
 
+	label := args.LogFilenameLabel
+	if label == "" {
+		label = "job-" + time.Now().Format("20060102-150405")
+	}
+	stderrFn := filepath.Join(dir, label+"_stderr.txt")
+	stdoutFn := filepath.Join(dir, label+"_stdout.txt")
+
+	if args.LogFileSink {
+		cmdargs = append(cmdargs, "--log-file-sink", stdoutFn)
+	}
+
+	fmt.Println(cmdargs)
+
 	cmd := exec.CommandContext(ctx, executable, cmdargs...)
 	if args.Cwd != "" {
 		cmd.Dir = args.Cwd
@@ -151,31 +164,25 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 	}
 
 	var err error
-	var stderrFn, stdoutFn string
 	var stderr, stdout *os.File
 
 	if args.SaveLogs {
-		label := args.LogFilenameLabel
-		if label == "" {
-			label = "job-" + time.Now().Format("20060102-150405")
-		}
-		stderrFn = filepath.Join(dir, label+"_stderr.txt")
-		stdoutFn = filepath.Join(dir, label+"_stdout.txt")
-
 		stderr, err = os.Create(stderrFn)
 		if err != nil {
 			return nil, fmt.Errorf("error creating temporary stderr log file: %w", err)
 		}
 		defer stderr.Close()
 
-		stdout, err = os.Create(stdoutFn)
-		if err != nil {
-			return nil, fmt.Errorf("error creating temporary stdout log file: %w", err)
+		if !args.LogFileSink {
+			stdout, err = os.Create(stdoutFn)
+			if err != nil {
+				return nil, fmt.Errorf("error creating temporary stdout log file: %w", err)
+			}
+			defer stdout.Close()
 		}
-		defer stdout.Close()
 		if args.WriteToStd {
+			cmd.Stdout = os.Stdout
 			cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
-			cmd.Stdout = io.MultiWriter(stdout, os.Stdout)
 		} else {
 			cmd.Stderr = stderr
 			cmd.Stdout = stdout
@@ -192,9 +199,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		cmd.Stdin = nil
 	}
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setCommandProcessGroup(cmd)
 
 	var result ForkResult
 	var resultError error
@@ -204,7 +209,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		go func() {
 			for range sigch {
 				args.Log.Trace("forwarding interrupt to child process")
-				syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+				cmd.Process.Signal(os.Interrupt)
 			}
 		}()
 	}

@@ -34,18 +34,20 @@ func (e Entry) String() string {
 }
 
 type gcloudLogger struct {
-	metadata  map[string]interface{}
-	traceID   string
-	component string
-	sink      Sink
-	noConsole bool
-	ts        *time.Time // for unit testing
+	metadata     map[string]interface{}
+	traceID      string
+	component    string
+	sink         Sink
+	sinkLogLevel LogLevel
+	noConsole    bool
+	ts           *time.Time // for unit testing
 }
 
 var _ Logger = (*gcloudLogger)(nil)
 
-func (c *gcloudLogger) WithSink(sink Sink) Logger {
+func (c *gcloudLogger) WithSink(sink Sink, level LogLevel) Logger {
 	c.sink = sink
+	c.sinkLogLevel = level
 	return c
 }
 
@@ -87,11 +89,12 @@ func (c *gcloudLogger) With(metadata map[string]interface{}) Logger {
 		kv = nil
 	}
 	return &gcloudLogger{
-		metadata:  kv,
-		traceID:   traceID,
-		component: component,
-		noConsole: c.noConsole,
-		sink:      c.sink,
+		metadata:     kv,
+		traceID:      traceID,
+		component:    component,
+		noConsole:    c.noConsole,
+		sink:         c.sink,
+		sinkLogLevel: c.sinkLogLevel,
 	}
 }
 
@@ -108,7 +111,7 @@ func (c *gcloudLogger) tokenize(val string) string {
 	return val
 }
 
-func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
+func (c *gcloudLogger) Log(level LogLevel, severity string, msg string, args ...interface{}) {
 	_msg := msg
 	if len(args) > 0 {
 		_msg = fmt.Sprintf(msg, args...)
@@ -124,7 +127,7 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 	if !c.noConsole {
 		log.Println(entry)
 	}
-	if c.sink != nil {
+	if c.sink != nil && level >= c.sinkLogLevel {
 		entry.Message = ansiColorStripper.ReplaceAllString(entry.Message, "")
 		if c.ts != nil {
 			entry.Timestamp = *c.ts // for testing
@@ -135,23 +138,27 @@ func (c *gcloudLogger) Log(severity string, msg string, args ...interface{}) {
 }
 
 func (c *gcloudLogger) Trace(msg string, args ...interface{}) {
-	c.Log("TRACE", msg, args...)
+	c.Log(LevelTrace, "TRACE", msg, args...)
 }
 
 func (c *gcloudLogger) Debug(msg string, args ...interface{}) {
-	c.Log("DEBUG", msg, args...)
+	c.Log(LevelDebug, "DEBUG", msg, args...)
 }
 
 func (c *gcloudLogger) Info(msg string, args ...interface{}) {
-	c.Log("INFO", msg, args...)
+	c.Log(LevelInfo, "INFO", msg, args...)
 }
 
 func (c *gcloudLogger) Warn(msg string, args ...interface{}) {
-	c.Log("WARNING", msg, args...)
+	c.Log(LevelWarn, "WARNING", msg, args...)
 }
 
 func (c *gcloudLogger) Error(msg string, args ...interface{}) {
-	c.Log("ERROR", msg, args...)
+	c.Log(LevelError, "ERROR", msg, args...)
+}
+
+func (c *gcloudLogger) Fatal(msg string, args ...interface{}) {
+	c.Log(LevelError, "ERROR", msg, args...)
 }
 
 // NewGCloudLogger returns a new Logger instance which can be used for structured google cloud logging
@@ -160,6 +167,6 @@ func NewGCloudLogger() Logger {
 }
 
 // NewGCloudLoggerWithSink returns a new Logger instance using a sink and suppressing the console logging
-func NewGCloudLoggerWithSink(sink Sink) Logger {
-	return &gcloudLogger{noConsole: true, sink: sink}
+func NewGCloudLoggerWithSink(sink Sink, level LogLevel) Logger {
+	return &gcloudLogger{noConsole: true, sink: sink, sinkLogLevel: level}
 }
