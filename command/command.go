@@ -65,8 +65,8 @@ type ForkArgs struct {
 	SaveLogs            bool
 	Env                 []string
 	SkipBundleOnSuccess bool
-	WriteToStd          bool
-	ForwardInterrupt    bool
+	WriteToStd          bool // write to both files and stdout/stderr
+	ForwardInterrupt    bool // forward interrupt signal to child process
 }
 
 type ForkResult struct {
@@ -190,10 +190,6 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		cmd.Stdin = os.Stdin
 	} else {
 		cmd.Stdin = nil
-	}
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
 	}
 
 	var result ForkResult
