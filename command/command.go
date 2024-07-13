@@ -143,8 +143,6 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		cmdargs = append(cmdargs, "--log-file-sink", stdoutFn)
 	}
 
-	fmt.Println(cmdargs)
-
 	cmd := exec.CommandContext(ctx, executable, cmdargs...)
 	if args.Cwd != "" {
 		cmd.Dir = args.Cwd
