@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,6 +66,7 @@ type ForkArgs struct {
 	Env                 []string
 	SkipBundleOnSuccess bool
 	WriteToStd          bool
+	ForwardInterrupt    bool
 }
 
 type ForkResult struct {
@@ -196,6 +198,16 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 
 	var result ForkResult
 	var resultError error
+	sigch := make(chan os.Signal, 1)
+	if args.ForwardInterrupt {
+		signal.Notify(sigch, os.Interrupt)
+		go func() {
+			for range sigch {
+				args.Log.Trace("forwarding interrupt to child process")
+				syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+			}
+		}()
+	}
 
 	if err := cmd.Run(); err != nil {
 		if args.SaveLogs {
@@ -212,6 +224,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		stderr.Close()
 		stdout.Close()
 	}
+	close(sigch)
 
 	result.ProcessState = cmd.ProcessState
 	result.Duration = time.Since(started)
