@@ -190,9 +190,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		stdout.WriteString(fmt.Sprintf("executing: %s\n", formatCmd(cmdargs)))
 	} else {
 		cmd.Stderr = os.Stderr
-		if !args.LogFileSink {
-			cmd.Stdout = os.Stdout
-		}
+		cmd.Stdout = os.Stdout
 	}
 
 	if args.WriteToStd {
