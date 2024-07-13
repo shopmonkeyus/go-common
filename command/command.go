@@ -202,10 +202,15 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 	var result ForkResult
 	var resultError error
 	sigch := make(chan os.Signal, 1)
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if args.ForwardInterrupt {
 		signal.Notify(sigch, os.Interrupt)
 		go func() {
-			for range sigch {
+			select {
+			case <-cctx.Done():
+				return
+			case <-sigch:
 				args.Log.Trace("forwarding interrupt to child process")
 				cmd.Process.Signal(os.Interrupt)
 			}
@@ -227,7 +232,6 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		stderr.Close()
 		stdout.Close()
 	}
-	close(sigch)
 
 	result.ProcessState = cmd.ProcessState
 	result.Duration = time.Since(started)
