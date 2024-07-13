@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +64,7 @@ type ForkArgs struct {
 	SaveLogs            bool
 	Env                 []string
 	SkipBundleOnSuccess bool
+	WriteToStd          bool
 }
 
 type ForkResult struct {
@@ -169,15 +171,25 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 			return nil, fmt.Errorf("error creating temporary stdout log file: %w", err)
 		}
 		defer stdout.Close()
-		cmd.Stderr = stderr
-		cmd.Stdout = stdout
+		if args.WriteToStd {
+			cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
+			cmd.Stdout = io.MultiWriter(stdout, os.Stdout)
+		} else {
+			cmd.Stderr = stderr
+			cmd.Stdout = stdout
+		}
 		stdout.WriteString(fmt.Sprintf("executing: %s\n", formatCmd(cmdargs)))
 	} else {
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 	}
 
-	cmd.Stdin = nil
+	if args.WriteToStd {
+		cmd.Stdin = os.Stdin
+	} else {
+		cmd.Stdin = nil
+	}
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
