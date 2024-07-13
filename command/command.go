@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/shopmonkeyus/go-common/compress"
@@ -65,8 +64,8 @@ type ForkArgs struct {
 	SaveLogs            bool
 	Env                 []string
 	SkipBundleOnSuccess bool
-	WriteToStd          bool // write to both files and stdout/stderr
-	ForwardInterrupt    bool // forward interrupt signal to child process
+	WriteToStd          bool
+	ForwardInterrupt    bool
 }
 
 type ForkResult struct {
@@ -192,6 +191,8 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		cmd.Stdin = nil
 	}
 
+	setCommandProcessGroup(cmd)
+
 	var result ForkResult
 	var resultError error
 	sigch := make(chan os.Signal, 1)
@@ -200,7 +201,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 		go func() {
 			for range sigch {
 				args.Log.Trace("forwarding interrupt to child process")
-				syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+				cmd.Process.Signal(os.Interrupt)
 			}
 		}()
 	}
