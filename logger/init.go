@@ -2,6 +2,18 @@ package logger
 
 import "regexp"
 
+// LogLevel defines the level of logging
+type LogLevel int
+
+const (
+	LevelTrace LogLevel = iota
+	LevelDebug
+	LevelInfo
+	LevelWarn
+	LevelError
+	LevelNone
+)
+
 type Sink interface {
 	// Write will receive the log output as a slice of bytes
 	Write([]byte) error
@@ -14,7 +26,7 @@ type Logger interface {
 	// WithPrefix will return a new logger with a prefix prepended to the message
 	WithPrefix(prefix string) Logger
 	// WithSink returns a Logger which will also delegate logs to the provided sink
-	WithSink(sink Sink) Logger
+	WithSink(sink Sink, level LogLevel) Logger
 	// Trace level logging
 	Trace(msg string, args ...interface{})
 	// Debug level logging
@@ -25,6 +37,8 @@ type Logger interface {
 	Warn(msg string, args ...interface{})
 	// Error level logging
 	Error(msg string, args ...interface{})
+	// Fatal level logging and exit with code 1
+	Fatal(msg string, args ...interface{})
 }
 
 var ansiColorStripper = regexp.MustCompile("\x1b\\[[0-9;]*[mK]")

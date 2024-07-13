@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	gstrings "github.com/shopmonkeyus/go-common/string"
 )
@@ -29,17 +30,6 @@ const (
 	Purple      = "\u001b[38;5;200m"
 )
 
-// LogLevel defines the level of logging
-type LogLevel int
-
-const (
-	LevelTrace LogLevel = iota
-	LevelDebug
-	LevelInfo
-	LevelWarn
-	LevelError
-)
-
 type consoleLogger struct {
 	prefixes          []string
 	metadata          map[string]interface{}
@@ -55,6 +45,7 @@ type consoleLogger struct {
 	errorMessageColor string
 	sink              Sink
 	logLevel          LogLevel
+	sinkLogLevel      LogLevel
 }
 
 var _ Logger = (*consoleLogger)(nil)
@@ -102,11 +93,13 @@ func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogg
 		errorMessageColor: c.Default(c.errorMessageColor, Red),
 		sink:              sink,
 		logLevel:          c.logLevel,
+		sinkLogLevel:      c.sinkLogLevel,
 	}
 }
 
-func (c *consoleLogger) WithSink(sink Sink) Logger {
+func (c *consoleLogger) WithSink(sink Sink, level LogLevel) Logger {
 	c.sink = sink
+	c.sinkLogLevel = level
 	return c
 }
 
@@ -128,7 +121,7 @@ func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
 }
 
 func (c *consoleLogger) Log(level LogLevel, levelColor string, messageColor string, levelString string, msg string, args ...interface{}) {
-	if level < c.logLevel {
+	if level < c.logLevel && level < c.sinkLogLevel {
 		return
 	}
 	_msg := fmt.Sprintf(msg, args...)
@@ -155,9 +148,12 @@ func (c *consoleLogger) Log(level LogLevel, levelColor string, messageColor stri
 	levelText := levelColor + fmt.Sprintf("[%s]%s", levelString, levelSuffix) + Reset
 	message := messageColor + _msg + Reset
 	out := fmt.Sprintf("%s %s%s%s", levelText, prefix, message, suffix)
-	log.Printf("%s\n", out)
-	if c.sink != nil {
-		c.sink.Write([]byte(ansiColorStripper.ReplaceAllString(out, "")))
+	if level >= c.logLevel {
+		log.Printf("%s\n", out)
+	}
+	if c.sink != nil && level >= c.sinkLogLevel {
+		ts := time.Now().Format(time.RFC3339Nano)
+		c.sink.Write([]byte(ts + " " + ansiColorStripper.ReplaceAllString(out, "") + "\n"))
 	}
 }
 
@@ -181,6 +177,11 @@ func (c *consoleLogger) Error(msg string, args ...interface{}) {
 	c.Log(LevelError, c.errorLevelColor, c.errorMessageColor, "ERROR", msg, args...)
 }
 
+func (c *consoleLogger) Fatal(msg string, args ...interface{}) {
+	c.Log(LevelError, c.errorLevelColor, c.errorMessageColor, "ERROR", msg, args...)
+	os.Exit(1)
+}
+
 func (c *consoleLogger) SetLogLevel(level LogLevel) {
 	c.logLevel = level
 }
@@ -188,7 +189,7 @@ func (c *consoleLogger) SetLogLevel(level LogLevel) {
 // NewConsoleLogger returns a new Logger instance which will log to the console
 func NewConsoleLogger(levels ...LogLevel) Logger {
 	if len(levels) > 0 {
-		return (&consoleLogger{logLevel: levels[0]}).Clone(nil, nil)
+		return (&consoleLogger{logLevel: levels[0], sinkLogLevel: LevelNone}).Clone(nil, nil)
 	}
-	return (&consoleLogger{logLevel: LevelDebug}).Clone(nil, nil)
+	return (&consoleLogger{logLevel: LevelDebug, sinkLogLevel: LevelNone}).Clone(nil, nil)
 }

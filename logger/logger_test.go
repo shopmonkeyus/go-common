@@ -18,7 +18,7 @@ func (s *testSink) Write(buf []byte) error {
 
 func TestGCloudLogger(t *testing.T) {
 	sink := &testSink{}
-	log := NewGCloudLoggerWithSink(sink)
+	log := NewGCloudLoggerWithSink(sink, LevelTrace)
 	glog := log.(*gcloudLogger)
 	tv := time.Date(2023, 10, 22, 12, 30, 0, 0, time.UTC)
 	glog.ts = &tv
