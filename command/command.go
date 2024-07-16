@@ -49,6 +49,8 @@ func parseLastLines(fn string, n int) (string, error) {
 
 type Uploader func(ctx context.Context, log logger.Logger, file string) (string, error)
 
+type ProcessCallback func(process *os.Process)
+
 type ForkArgs struct {
 	// required
 	Log     logger.Logger
@@ -67,6 +69,7 @@ type ForkArgs struct {
 	WriteToStd          bool
 	ForwardInterrupt    bool
 	LogFileSink         bool
+	ProcessCallback     ProcessCallback
 }
 
 type ForkResult struct {
@@ -213,6 +216,23 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 			case <-sigch:
 				args.Log.Trace("forwarding interrupt to child process")
 				cmd.Process.Signal(os.Interrupt)
+			}
+		}()
+	}
+
+	// notify the callback with the process once its running
+	if args.ProcessCallback != nil {
+		go func() {
+			for {
+				select {
+				case <-cctx.Done():
+					return
+				case <-time.After(time.Millisecond * 10):
+					if cmd.Process != nil && cmd.ProcessState != nil && !cmd.ProcessState.Exited() {
+						args.ProcessCallback(cmd.Process)
+						return
+					}
+				}
 			}
 		}()
 	}
