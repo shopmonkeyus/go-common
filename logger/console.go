@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	gstrings "github.com/shopmonkeyus/go-common/string"
 )
+
+const isWindows = runtime.GOOS == "windows"
+
+func color(val string) string {
+	if isWindows {
+		return ""
+	}
+	return val
+}
 
 const (
 	Reset       = "\033[0m"
@@ -128,16 +138,16 @@ func (c *consoleLogger) Log(level LogLevel, levelColor string, messageColor stri
 	var prefix string
 	var suffix string
 	if len(c.prefixes) > 0 {
-		prefix = Purple + strings.Join(c.prefixes, " ") + Reset + " "
+		prefix = color(Purple) + strings.Join(c.prefixes, " ") + color(Reset) + " "
 	}
 	if c.metadata != nil {
 		buf, _ := json.Marshal(c.metadata)
 		_buf := string(buf)
 		if _buf != "{}" {
 			if isCI {
-				suffix = " " + MagentaBold + _buf + Reset
+				suffix = " " + color(MagentaBold) + _buf + color(Reset)
 			} else {
-				suffix = " " + Gray + _buf + Reset
+				suffix = " " + color(Gray) + _buf + color(Reset)
 			}
 		}
 	}
@@ -145,8 +155,8 @@ func (c *consoleLogger) Log(level LogLevel, levelColor string, messageColor stri
 	if len(levelString) < 5 {
 		levelSuffix = strings.Repeat(" ", 5-len(levelString))
 	}
-	levelText := levelColor + fmt.Sprintf("[%s]%s", levelString, levelSuffix) + Reset
-	message := messageColor + _msg + Reset
+	levelText := color(levelColor) + fmt.Sprintf("[%s]%s", levelString, levelSuffix) + color(Reset)
+	message := color(messageColor) + _msg + color(Reset)
 	out := fmt.Sprintf("%s %s%s%s", levelText, prefix, message, suffix)
 	if level >= c.logLevel {
 		log.Printf("%s\n", out)
