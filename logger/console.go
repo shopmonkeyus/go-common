@@ -107,10 +107,9 @@ func (c *consoleLogger) Clone(kv map[string]interface{}, sink Sink) *consoleLogg
 	}
 }
 
-func (c *consoleLogger) WithSink(sink Sink, level LogLevel) Logger {
+func (c *consoleLogger) SetSink(sink Sink, level LogLevel) {
 	c.sink = sink
 	c.sinkLogLevel = level
-	return c
 }
 
 func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
@@ -197,7 +196,7 @@ func (c *consoleLogger) SetLogLevel(level LogLevel) {
 }
 
 // NewConsoleLogger returns a new Logger instance which will log to the console
-func NewConsoleLogger(levels ...LogLevel) Logger {
+func NewConsoleLogger(levels ...LogLevel) SinkLogger {
 	if len(levels) > 0 {
 		return (&consoleLogger{logLevel: levels[0], sinkLogLevel: LevelNone}).Clone(nil, nil)
 	}
