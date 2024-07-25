@@ -40,8 +40,10 @@ func TestCombinedLogger(t *testing.T) {
 	sink := &testSink{}
 	log := NewTestLogger()
 	jsonLog := NewJSONLoggerWithSink(sink, LevelTrace)
+	tv := time.Date(2023, 10, 22, 12, 30, 0, 0, time.UTC)
+	jsonLog.(*jsonLogger).ts = &tv
 	combined := NewMultiLogger(log, jsonLog)
-	combined.Info("Hi")
+	combined.Info("Ayyyyyy")
 	assert.Len(t, log.Logs, 1)
-	assert.Equal(t, `{"timestamp":"2023-10-22T12:30:00Z","message":"Hi","severity":"INFO"}`, string(sink.buf))
+	assert.Equal(t, `{"timestamp":"2023-10-22T12:30:00Z","message":"Ayyyyyy","severity":"INFO"}`, string(sink.buf))
 }
