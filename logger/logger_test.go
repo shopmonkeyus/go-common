@@ -36,19 +36,11 @@ func TestGCloudLogger(t *testing.T) {
 	assert.Equal(t, `{"timestamp":"2023-10-22T12:30:00Z","message":"hi","severity":"DEBUG","component":"hi, bye"}`, string(sink.buf))
 }
 
-func TestCombinedLogger2231323(t *testing.T) {
-	// sink := &testSink{}
-	log := NewTestLogger()
-	combined := NewCombinedLogger(log, log, log)
-	combined.Info("Hi")
-	assert.Len(t, log.Logs, 3)
-}
-
 func TestCombinedLogger(t *testing.T) {
 	sink := &testSink{}
 	log := NewTestLogger()
 	jsonLog := NewJSONLoggerWithSink(sink, LevelTrace)
-	combined := NewCombinedLogger(log, jsonLog)
+	combined := NewMultiLogger(log, jsonLog)
 	combined.Info("Hi")
 	assert.Len(t, log.Logs, 1)
 	assert.Equal(t, `{"timestamp":"2023-10-22T12:30:00Z","message":"Hi","severity":"INFO"}`, string(sink.buf))

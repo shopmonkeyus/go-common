@@ -9,7 +9,7 @@ func (m *muxLogger) With(metadata map[string]interface{}) Logger {
 	for _, l := range m.loggers {
 		newLoggers = append(newLoggers, l.With(metadata))
 	}
-	return NewCombinedLogger(newLoggers...)
+	return NewMultiLogger(newLoggers...)
 }
 
 func (m *muxLogger) WithPrefix(prefix string) Logger {
@@ -17,7 +17,7 @@ func (m *muxLogger) WithPrefix(prefix string) Logger {
 	for _, l := range m.loggers {
 		newLoggers = append(newLoggers, l.WithPrefix(prefix))
 	}
-	return NewCombinedLogger(newLoggers...)
+	return NewMultiLogger(newLoggers...)
 }
 
 func (m *muxLogger) Trace(msg string, args ...interface{}) {
@@ -50,7 +50,7 @@ func (m *muxLogger) each(f func(Logger)) {
 	}
 }
 
-func NewCombinedLogger(loggers ...Logger) Logger {
+func NewMultiLogger(loggers ...Logger) Logger {
 	return &muxLogger{
 		loggers: loggers,
 	}
