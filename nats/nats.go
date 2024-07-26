@@ -163,9 +163,7 @@ func (s *subscriber) run() {
 			s.sub = sub
 			s.lock.Unlock()
 		}
-		c, cf := context.WithTimeout(s.ctx, time.Minute)
-		msgs, err := s.sub.Fetch(s.maxfetch, nats.Context(c), nats.MaxWait(time.Minute))
-		cf()
+		msgs, err := s.sub.Fetch(s.maxfetch, nats.MaxWait(time.Minute))
 		if err != nil {
 			s.lock.Lock()
 			shutdown := s.shutdown
