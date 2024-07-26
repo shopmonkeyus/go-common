@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	cloud.google.com/go/secretmanager v1.13.4
-	github.com/nats-io/nats-server/v2 v2.10.17
+	github.com/nats-io/nats-server/v2 v2.10.18
 	github.com/nats-io/nats.go v1.36.0
 	github.com/stretchr/testify v1.9.0
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
@@ -30,8 +30,8 @@ require (
 	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/minio/highwayhash v1.0.2 // indirect
-	github.com/nats-io/jwt/v2 v2.5.7 // indirect
+	github.com/minio/highwayhash v1.0.3 // indirect
+	github.com/nats-io/jwt/v2 v2.5.8 // indirect
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
