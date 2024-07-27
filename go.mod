@@ -4,6 +4,7 @@ go 1.22
 
 require (
 	cloud.google.com/go/secretmanager v1.13.4
+	github.com/mattn/go-isatty v0.0.20
 	github.com/nats-io/nats-server/v2 v2.10.17
 	github.com/nats-io/nats.go v1.36.0
 	github.com/stretchr/testify v1.9.0

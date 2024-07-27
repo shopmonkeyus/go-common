@@ -9,13 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	gstrings "github.com/shopmonkeyus/go-common/string"
 )
 
 const isWindows = runtime.GOOS == "windows"
 
+var noColor = os.Getenv("TERM") == "dumb" ||
+	(!isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()))
+
 func color(val string) string {
-	if isWindows {
+	if isWindows || noColor {
 		return ""
 	}
 	return val
