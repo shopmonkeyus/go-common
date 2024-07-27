@@ -228,7 +228,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 				case <-cctx.Done():
 					return
 				case <-time.After(time.Millisecond * 10):
-					if cmd.Process != nil && cmd.ProcessState != nil && !cmd.ProcessState.Exited() {
+					if cmd.Process != nil && cmd.Process.Pid > 0 {
 						args.ProcessCallback(cmd.Process)
 						return
 					}
