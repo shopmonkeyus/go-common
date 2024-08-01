@@ -142,10 +142,6 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 	stderrFn := filepath.Join(dir, label+"_stderr.txt")
 	stdoutFn := filepath.Join(dir, label+"_stdout.txt")
 
-	if args.LogFileSink {
-		cmdargs = append(cmdargs, "--log-file-sink", stdoutFn)
-	}
-
 	cmd := exec.CommandContext(ctx, executable, cmdargs...)
 	if args.Cwd != "" {
 		cmd.Dir = args.Cwd
