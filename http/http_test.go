@@ -221,3 +221,41 @@ func TestHTTPMaxAttempts(t *testing.T) {
 	assert.Equal(t, ghttp.StatusBadGateway, tr.resp.StatusCode)
 	assert.Equal(t, uint(1), tr.resp.Attempts)
 }
+
+type testBackoff struct {
+	count uint
+}
+
+func (t *testBackoff) BackOff(attempt uint) time.Duration {
+	t.count++
+	return time.Millisecond
+}
+
+func TestHTTPBackoff(t *testing.T) {
+	var h http
+	var tr testRecord
+	var tb testBackoff
+	h.recorder = &tr
+	h.dur = 1 * time.Millisecond
+	h.timeout = time.Second
+	h.semaphore = semaphore.NewWeighted(1)
+	h.transport = &ghttp.Transport{}
+	h.maxAttempts = 3
+	h.backoff = &tb
+	var count int
+	srv := httptest.NewServer(ghttp.HandlerFunc(func(w ghttp.ResponseWriter, r *ghttp.Request) {
+		count++
+		w.WriteHeader(ghttp.StatusBadGateway)
+	}))
+	defer srv.Close()
+	resp, err := h.Deliver(context.Background(), NewHTTPGetRequest(srv.URL, nil))
+	assert.Error(t, err, ErrTooManyAttempts)
+	assert.NotNil(t, resp)
+	assert.Equal(t, ghttp.StatusBadGateway, resp.StatusCode)
+	assert.NotNil(t, tr.req)
+	assert.NotNil(t, tr.resp)
+	assert.Equal(t, srv.URL, tr.req.URL())
+	assert.Equal(t, ghttp.StatusBadGateway, tr.resp.StatusCode)
+	assert.Equal(t, uint(3), tr.resp.Attempts)
+	assert.Equal(t, uint(2), tb.count)
+}

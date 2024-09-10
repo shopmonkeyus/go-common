@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	ghttp "net/http"
 	"regexp"
@@ -95,6 +96,33 @@ type Http interface {
 	Deliver(ctx context.Context, request Request) (*Response, error)
 }
 
+// RetryBackoff is an interface for retrying a request with a backoff.
+type RetryBackoff interface {
+	// BackOff returns the duration to wait before retrying.
+	BackOff(attempt uint) time.Duration
+}
+
+type powerOfTwoBackoff struct {
+	min time.Duration
+	max time.Duration
+}
+
+func (p *powerOfTwoBackoff) BackOff(attempt uint) time.Duration {
+	if attempt == 0 {
+		return p.min
+	}
+	ms := time.Duration(math.Pow(2, float64(attempt))) * p.min
+	if ms > p.max {
+		return p.max
+	}
+	return ms
+}
+
+// NewMinMaxBackoff creates a new RetryBackoff that retries with a backoff of min * 2^attempt.
+func NewMinMaxBackoff(min time.Duration, max time.Duration) RetryBackoff {
+	return &powerOfTwoBackoff{min, max}
+}
+
 type http struct {
 	transport   *ghttp.Transport
 	timeout     time.Duration // set for testing but defaults to 55 seconds otherwise
@@ -103,6 +131,7 @@ type http struct {
 	count       uint64
 	semaphore   *semaphore.Weighted
 	maxAttempts uint
+	backoff     RetryBackoff
 }
 
 var _ Http = (*http)(nil)
@@ -225,6 +254,9 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 				break
 			}
 			ms := h.dur * time.Duration(attempt)
+			if h.backoff != nil {
+				ms = h.backoff.BackOff(attempt)
+			}
 			if resp != nil {
 				io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
@@ -272,6 +304,7 @@ type configOpts struct {
 	timeout     time.Duration
 	dur         time.Duration
 	maxAttempts uint
+	backoff     RetryBackoff
 }
 
 type ConfigOpt func(opts *configOpts)
@@ -283,6 +316,7 @@ func New(opts ...ConfigOpt) Http {
 	c.dur = time.Second
 	c.max = 100
 	c.maxAttempts = 4
+	c.backoff = NewMinMaxBackoff(time.Millisecond*50, time.Second*10)
 	for _, opt := range opts {
 		opt(&c)
 	}
@@ -322,6 +356,7 @@ func New(opts ...ConfigOpt) Http {
 		recorder:    c.recorder,
 		semaphore:   semaphore.NewWeighted(int64(c.max)),
 		maxAttempts: c.maxAttempts,
+		backoff:     c.backoff,
 	}
 }
 
@@ -353,8 +388,8 @@ func WithTimeout(timeout time.Duration) ConfigOpt {
 	}
 }
 
-// WithDuration sets the duration for the http client.
-func WithDuration(dur time.Duration) ConfigOpt {
+// WithBackoffDuration sets the backoff duration for the http client.
+func WithBackoffDuration(dur time.Duration) ConfigOpt {
 	return func(opts *configOpts) {
 		opts.dur = dur
 	}
@@ -364,5 +399,12 @@ func WithDuration(dur time.Duration) ConfigOpt {
 func WithMaxAttempts(max uint) ConfigOpt {
 	return func(opts *configOpts) {
 		opts.maxAttempts = max
+	}
+}
+
+// WithBackoff sets the backoff strategy for the http client.
+func WithBackoff(backoff RetryBackoff) ConfigOpt {
+	return func(opts *configOpts) {
+		opts.backoff = backoff
 	}
 }
