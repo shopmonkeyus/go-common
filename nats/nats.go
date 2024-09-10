@@ -205,7 +205,7 @@ func (s *subscriber) run() {
 				continue // keep going so that we nack all the messages
 			}
 			s.lock.Unlock()
-			msgid := msg.Header.Get(nats.MsgIdHdr)
+			msgid := getMsgIdFromHeader(msg)
 			if msgid == "" {
 				msgid = gstring.SHA256(msg.Data)
 			}
@@ -218,7 +218,7 @@ func (s *subscriber) run() {
 			if !s.disableLog {
 				s.logger.Debug("processing message: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
 			}
-			encoding := msg.Header.Get("content-encoding")
+			encoding := getContentEncodingFromHeader(msg)
 			gzipped := encoding == "gzip/json"
 			msgpacked := encoding == "msgpack"
 			started := time.Now()
