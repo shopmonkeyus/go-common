@@ -25,20 +25,23 @@ const (
 	userAgentHeaderValue = "Shopmonkey (+https://shopmonkey.io)"
 )
 
+// Request is an interface for an HTTP request.
 type Request interface {
+	// Method returns the HTTP method.
 	Method() string
+	// URL returns the URL.
 	URL() string
+	// Headers returns the headers.
 	Headers() map[string]string
+	// Payload returns the payload.
 	Payload() []byte
-	MaxAttempts() uint
 }
 
 type HTTPRequest struct {
-	method      string
-	url         string
-	headers     map[string]string
-	payload     []byte
-	maxAttempts uint
+	method  string
+	url     string
+	headers map[string]string
+	payload []byte
 }
 
 func (r *HTTPRequest) Method() string {
@@ -57,25 +60,22 @@ func (r *HTTPRequest) Payload() []byte {
 	return r.payload
 }
 
-func (r *HTTPRequest) MaxAttempts() uint {
-	return r.maxAttempts
-}
-
 // NewHTTPRequest creates a new HTTPRequest that implements the Request interface.
-func NewHTTPRequest(method string, url string, headers map[string]string, payload []byte, maxAttempts uint) Request {
-	return &HTTPRequest{method, url, headers, payload, maxAttempts}
+func NewHTTPRequest(method string, url string, headers map[string]string, payload []byte) Request {
+	return &HTTPRequest{method, url, headers, payload}
 }
 
 // NewHTTPGetRequest creates a new HTTPRequest that implements the Request interface for GET requests.
-func NewHTTPGetRequest(url string, headers map[string]string, maxAttempts uint) Request {
-	return &HTTPRequest{ghttp.MethodGet, url, headers, nil, maxAttempts}
+func NewHTTPGetRequest(url string, headers map[string]string) Request {
+	return &HTTPRequest{ghttp.MethodGet, url, headers, nil}
 }
 
 // NewHTTPPostRequest creates a new HTTPRequest that implements the Request interface for POST requests.
-func NewHTTPPostRequest(url string, headers map[string]string, payload []byte, maxAttempts uint) Request {
-	return &HTTPRequest{ghttp.MethodPost, url, headers, payload, maxAttempts}
+func NewHTTPPostRequest(url string, headers map[string]string, payload []byte) Request {
+	return &HTTPRequest{ghttp.MethodPost, url, headers, payload}
 }
 
+// Response is the response from an HTTP request.
 type Response struct {
 	StatusCode int               `json:"statusCode"`
 	Body       []byte            `json:"body,omitempty"`
@@ -89,18 +89,20 @@ type Recorder interface {
 	OnResponse(ctx context.Context, req Request, resp *Response)
 }
 
+// Http is an interface for making HTTP requests.
 type Http interface {
-	// Deliver sends a payload to a URL with the given headers.
+	// Deliver sends a request and returns a response.
 	Deliver(ctx context.Context, request Request) (*Response, error)
 }
 
 type http struct {
-	transport *ghttp.Transport
-	timeout   time.Duration // set for testing but defaults to 55 seconds otherwise
-	dur       time.Duration // set for testing but defaults to 1 second otherwise
-	recorder  Recorder
-	count     uint64
-	semaphore *semaphore.Weighted
+	transport   *ghttp.Transport
+	timeout     time.Duration // set for testing but defaults to 55 seconds otherwise
+	dur         time.Duration // set for testing but defaults to 1 second otherwise
+	recorder    Recorder
+	count       uint64
+	semaphore   *semaphore.Weighted
+	maxAttempts uint
 }
 
 var _ Http = (*http)(nil)
@@ -165,7 +167,7 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 	var response *Response
 	var c context.Context
 	var cancel context.CancelFunc
-	maxAttempts := req.MaxAttempts()
+	maxAttempts := h.maxAttempts
 	if maxAttempts == 1 {
 		// for testing we want to make sure we don't wait too long
 		c, cancel = context.WithTimeout(ctx, time.Second*3)
@@ -175,6 +177,9 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 	}
 	defer cancel()
 	headers := req.Headers()
+	if headers == nil {
+		headers = make(map[string]string)
+	}
 	for attempt < maxAttempts {
 		attempt++
 		reqId := h.generateRequestId(req)
@@ -261,11 +266,12 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 }
 
 type configOpts struct {
-	recorder Recorder
-	max      uint64
-	dns      dns.DNS
-	timeout  time.Duration
-	dur      time.Duration
+	recorder    Recorder
+	max         uint64
+	dns         dns.DNS
+	timeout     time.Duration
+	dur         time.Duration
+	maxAttempts uint
 }
 
 type ConfigOpt func(opts *configOpts)
@@ -276,11 +282,15 @@ func New(opts ...ConfigOpt) Http {
 	c.timeout = time.Second * 55
 	c.dur = time.Second
 	c.max = 100
+	c.maxAttempts = 4
 	for _, opt := range opts {
 		opt(&c)
 	}
 	if c.max <= 0 {
 		panic("max was nil")
+	}
+	if c.maxAttempts <= 0 {
+		panic("maxAttempts was nil")
 	}
 	var transport *ghttp.Transport
 	if c.dns != nil {
@@ -306,11 +316,12 @@ func New(opts ...ConfigOpt) Http {
 		transport = ghttp.DefaultTransport.(*ghttp.Transport)
 	}
 	return &http{
-		transport: transport,
-		timeout:   c.timeout,
-		dur:       c.dur,
-		recorder:  c.recorder,
-		semaphore: semaphore.NewWeighted(int64(c.max)),
+		transport:   transport,
+		timeout:     c.timeout,
+		dur:         c.dur,
+		recorder:    c.recorder,
+		semaphore:   semaphore.NewWeighted(int64(c.max)),
+		maxAttempts: c.maxAttempts,
 	}
 }
 
@@ -346,5 +357,12 @@ func WithTimeout(timeout time.Duration) ConfigOpt {
 func WithDuration(dur time.Duration) ConfigOpt {
 	return func(opts *configOpts) {
 		opts.dur = dur
+	}
+}
+
+// WithMaxAttempts sets the max number of attempts for the http client.
+func WithMaxAttempts(max uint) ConfigOpt {
+	return func(opts *configOpts) {
+		opts.maxAttempts = max
 	}
 }
