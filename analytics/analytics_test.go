@@ -12,6 +12,7 @@ import (
 	"github.com/shopmonkeyus/go-common/logger"
 	gnats "github.com/shopmonkeyus/go-common/nats"
 	cstring "github.com/shopmonkeyus/go-common/string"
+	headers "github.com/shopmonkeyus/go-common/nats/headers"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,11 +69,11 @@ func TestAnalyticsBasic(t *testing.T) {
 	assert.Nil(t, event.SessionId)
 	assert.Nil(t, event.UserId)
 	assert.Nil(t, event.RequestId)
-	assert.Equal(t, "dev", msg.Header.Get("region"))
-	assert.Equal(t, "companyId", msg.Header.Get("x-company-id"))
-	assert.Equal(t, "locationId", msg.Header.Get("x-location-id"))
-	assert.Empty(t, "", msg.Header.Get("x-user-id"))
-	assert.NotEmpty(t, msg.Header.Get("Nats-Msg-Id"))
+	assert.Equal(t, "dev", headers.getRegionFromHeader(msg))
+	assert.Equal(t, "companyId", headers.getCompanyIdFromHeader(msg))
+	assert.Equal(t, "locationId", headers.getLocationIdFromHeader(msg))
+	assert.Empty(t, "", headers.getUserIdFromHeader(msg))
+	assert.NotEmpty(t, headers.getMsgIdFromHeader(msg))
 	assert.Equal(t, "analytics.companyId.locationId.test", msg.Subject)
 }
 
@@ -132,11 +133,11 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	assert.Equal(t, "sessionid", *event.SessionId)
 	assert.Equal(t, "userid", *event.UserId)
 	assert.Equal(t, "requestid", *event.RequestId)
-	assert.Equal(t, "region", msg.Header.Get("region"))
-	assert.Equal(t, "companyId", msg.Header.Get("x-company-id"))
-	assert.Equal(t, "locationId", msg.Header.Get("x-location-id"))
-	assert.Equal(t, "userid", msg.Header.Get("x-user-id"))
-	assert.Equal(t, id, msg.Header.Get("Nats-Msg-Id"))
+	assert.Equal(t, "region", headers.getRegionFromHeader(msg))
+	assert.Equal(t, "companyId", headers.getCompanyIdFromHeader(msg))
+	assert.Equal(t, "locationId", headers.getLocationIdFromHeader(msg))
+	assert.Equal(t, "userid", headers.getUserIdFromHeader(msg))
+	assert.Equal(t, id, headers.getMsgIdFromHeader(msg))
 	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data.(map[string]interface{})["payload"])
 	assert.Equal(t, "analytics.companyId.locationId.test", msg.Subject)
 }
@@ -197,11 +198,11 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 	assert.Equal(t, "sessionid", *event.SessionId)
 	assert.Equal(t, "userid", *event.UserId)
 	assert.Equal(t, "requestid", *event.RequestId)
-	assert.Equal(t, "region", msg.Header.Get("region"))
-	assert.Empty(t, msg.Header.Get("x-company-id"))
-	assert.Empty(t, msg.Header.Get("x-location-id"))
-	assert.Equal(t, "userid", msg.Header.Get("x-user-id"))
-	assert.Equal(t, id, msg.Header.Get("Nats-Msg-Id"))
+	assert.Equal(t, "region", headers.getRegionFromHeader(msg))
+	assert.Empty(t, headers.getCompanyIdFromHeader(msg))
+	assert.Empty(t, headers.getLocationIdFromHeader(msg))
+	assert.Equal(t, "userid", headers.getUserIdFromHeader(msg))
+	assert.Equal(t, id, headers.getMsgIdFromHeader(msg))
 	assert.Equal(t, map[string]interface{}{"foo": "bar"}, event.Data.(map[string]interface{})["payload"])
 	assert.Equal(t, "analytics.NONE.NONE.test", msg.Subject)
 }
