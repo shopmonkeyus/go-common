@@ -4,29 +4,29 @@ import (
 	"testing"
 )
 
-func TestSliceContains(t *testing.T) {
+func TestContains(t *testing.T) {
 	slice := []string{"a", "b", "c"}
-	if !SliceContains(slice, "a") {
+	if !Contains(slice, "a") {
 		t.Errorf("expected true, got false")
 	}
-	if SliceContains(slice, "d") {
+	if Contains(slice, "d") {
 		t.Errorf("expected false, got true")
 	}
 }
 
-func TestSliceContainsAny(t *testing.T) {
+func TestContainsAny(t *testing.T) {
 	slice := []string{"a", "b", "c"}
-	if !SliceContainsAny(slice, "a", "d") {
+	if !ContainsAny(slice, "a", "d") {
 		t.Errorf("expected true, got false")
 	}
-	if SliceContainsAny(slice, "d", "e") {
+	if ContainsAny(slice, "d", "e") {
 		t.Errorf("expected false, got true")
 	}
 }
 
-func TestSliceOmit(t *testing.T) {
+func TestOmit(t *testing.T) {
 	slice := []string{"a", "b", "c"}
-	result := SliceOmit(slice, "a", "c")
+	result := Omit(slice, "a", "c")
 	if len(result) != 1 || result[0] != "b" {
 		t.Errorf(`expected ["b"], got %v`, result)
 	}
