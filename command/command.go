@@ -106,14 +106,23 @@ func formatCmd(cmdargs []string) string {
 	return fmt.Sprintf("%s %s\n", os.Args[0], strings.Join(args, " "))
 }
 
-// Fork will run a command on the current binary
+// GetExecutable returns the path to the current executable.
+func GetExecutable() string {
+	ex, err := os.Executable()
+	if err != nil {
+		ex = os.Args[0]
+	}
+	return ex
+}
+
+// Fork will run a command on the current executable.
 func Fork(args ForkArgs) (*ForkResult, error) {
 	started := time.Now()
 	if args.Log == nil {
 		args.Log = logger.NewConsoleLogger(logger.LevelInfo)
 	}
 	dir := args.Dir
-	executable := os.Args[0]
+	executable := GetExecutable()
 	if dir == "" {
 		tmp, err := os.MkdirTemp("", filepath.Base(executable)+"-")
 		if err != nil {
@@ -178,7 +187,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 			defer stdout.Close()
 		}
 		if args.WriteToStd {
-			cmd.Stdout = os.Stdout
+			cmd.Stdout = io.MultiWriter(stdout, os.Stdout)
 			cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
 		} else {
 			cmd.Stderr = stderr
@@ -258,7 +267,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 			if args.BaseDir != "" {
 				baseDir = args.BaseDir
 			}
-			targz, err := tarGzipDir(baseDir)
+			targz, err := compress.TarGzipDir(baseDir)
 			if err != nil {
 				return nil, fmt.Errorf("error compressing logs: %w", err)
 			}
@@ -267,17 +276,4 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 	}
 
 	return &result, resultError
-}
-
-func tarGzipDir(srcDir string) (string, error) {
-	tmpfn, err := os.CreateTemp("", "*.tar.gz")
-	if err != nil {
-		return "", fmt.Errorf("tmp: %w", err)
-	}
-	defer tmpfn.Close()
-
-	if err := compress.TarGz(srcDir, tmpfn); err != nil {
-		return "", err
-	}
-	return tmpfn.Name(), nil
 }

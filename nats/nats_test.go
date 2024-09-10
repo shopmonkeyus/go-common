@@ -28,7 +28,7 @@ func TestNats(t *testing.T) {
 	server := RunTestServer(false)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	n.Close()
@@ -37,7 +37,7 @@ func TestNats(t *testing.T) {
 	assert.Equal(t, "DEBUG", log.Logs[0].Severity)
 	assert.Equal(t, "NATS ping rtt: %v, host: %s (%s)", log.Logs[0].Message)
 	assert.Len(t, log.Logs[0].Arguments, 3)
-	assert.Equal(t, "nats://localhost:8222", log.Logs[0].Arguments[1])
+	assert.Equal(t, server.ClientURL(), log.Logs[0].Arguments[1])
 	assert.Len(t, log.Logs[0].Arguments[2], 56, "invalid nats id")
 }
 
@@ -45,7 +45,7 @@ func TestNatsWithOpts(t *testing.T) {
 	server := RunTestServer(false)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222,nats://foo:9822,nats://bar:9100", nil, nats.DontRandomize())
+	n, err := NewNats(log, "test", server.ClientURL()+",nats://localhost:9822,nats://localhost:9100", nil, nats.DontRandomize())
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	n.Close()
@@ -54,7 +54,7 @@ func TestNatsWithOpts(t *testing.T) {
 	assert.Equal(t, "DEBUG", log.Logs[0].Severity)
 	assert.Equal(t, "NATS ping rtt: %v, host: %s (%s)", log.Logs[0].Message)
 	assert.Len(t, log.Logs[0].Arguments, 3)
-	assert.Equal(t, "nats://localhost:8222", log.Logs[0].Arguments[1])
+	assert.Equal(t, server.ClientURL(), log.Logs[0].Arguments[1])
 	assert.Len(t, log.Logs[0].Arguments[2], 56, "invalid nats id")
 }
 
@@ -62,7 +62,7 @@ func TestExactlyOnceConsumer(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
@@ -106,7 +106,7 @@ func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
@@ -156,7 +156,7 @@ func TestQueueConsumer(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	queue := fmt.Sprintf("qc%v", time.Now().Unix())
@@ -220,7 +220,7 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	queue := fmt.Sprintf("queuel%v", time.Now().Unix())
 	subject := queue + ".>"
 	message := queue + ".test"
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
@@ -281,7 +281,7 @@ func TestEphemeralConsumer(t *testing.T) {
 	queue := fmt.Sprintf("ephem%v", time.Now().Unix())
 	subject := queue + ".>"
 	message := queue + ".test"
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
@@ -348,7 +348,7 @@ func TestEphemeralConsumerAutoExtend(t *testing.T) {
 	queue := fmt.Sprintf("aephem%v", time.Now().Unix())
 	subject := queue + ".>"
 	message := queue + ".test"
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
@@ -388,7 +388,7 @@ func TestExactlyOnceConsumerConfigChanged(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
@@ -426,7 +426,7 @@ func TestQueueConsumerConfigChanged(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", "nats://localhost:8222", nil)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	js, err := n.JetStream()
