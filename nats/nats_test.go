@@ -77,7 +77,7 @@ func TestExactlyOnceConsumer(t *testing.T) {
 	var received string
 	var msgid string
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("received:", string(buf), "msgid:", _msgid)
 		received = string(buf)
 		msgid = _msgid
@@ -121,7 +121,7 @@ func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
 	var received string
 	var msgid string
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("received:", string(buf), "msgid:", _msgid)
 		received = string(buf)
 		msgid = _msgid
@@ -137,7 +137,7 @@ func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
 	assert.NoError(t, enc.Encode(map[string]any{"hi": "there"}))
 	msg := nats.NewMsg(queue + ".test")
 	msg.Data = buf.Bytes()
-	msg.Header.Set("content-encoding", "msgpack")
+	SetContentEncodingHeader(msg, "msgpack")
 	_, err = js.PublishMsg(msg, nats.MsgId(_msgid))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Second)
@@ -172,7 +172,7 @@ func TestQueueConsumer(t *testing.T) {
 	var received1 string
 	var msgid1 string
 	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("1 received:", string(buf), "msgid:", _msgid)
 		received1 = string(buf)
 		msgid1 = _msgid
@@ -182,7 +182,7 @@ func TestQueueConsumer(t *testing.T) {
 	var received2 string
 	var msgid2 string
 	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("2 received:", string(buf), "msgid:", _msgid)
 		received2 = string(buf)
 		msgid2 = _msgid
@@ -234,7 +234,7 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	var received1 string
 	var msgid1 string
 	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("1 received:", string(buf), "msgid:", _msgid)
 		received1 = string(buf)
 		msgid1 = _msgid
@@ -244,7 +244,7 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	var received2 string
 	var msgid2 string
 	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("2 received:", string(buf), "msgid:", _msgid)
 		received2 = string(buf)
 		msgid2 = _msgid
@@ -297,7 +297,7 @@ func TestEphemeralConsumer(t *testing.T) {
 	var wg sync.WaitGroup
 	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		defer wg.Done()
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("1 received:", string(buf), "msgid:", _msgid)
 		received1 = string(buf)
 		msgid1 = _msgid
@@ -362,7 +362,7 @@ func TestEphemeralConsumerAutoExtend(t *testing.T) {
 	var received string
 	var msgid string
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := msg.Header.Get("Nats-Msg-Id")
+		_msgid := GetMsgIdFromHeader(msg)
 		log.Info("received: %s, msgid: %s", string(buf), _msgid)
 		time.Sleep(time.Second * 5) // block to force the extender to run
 		received = string(buf)

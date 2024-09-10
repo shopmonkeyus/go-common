@@ -3,14 +3,14 @@ package nats
 import (
 	"encoding/json"
 
-	"github.com/nats-io/nats.go"
+	gnats "github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/compress"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
 // DecodeNatsMsg will decode the nats message into the provided interface.
-func DecodeNatsMsg(msg *nats.Msg, v interface{}) error {
-	encoding := msg.Header.Get("content-encoding")
+func DecodeNatsMsg(msg *gnats.Msg, v interface{}) error {
+	encoding := GetContentEncodingFromHeader(msg)
 	gzipped := encoding == "gzip/json"
 	msgpacked := encoding == "msgpack"
 	var err error
