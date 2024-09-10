@@ -33,7 +33,7 @@ func NewNats(log logger.Logger, name string, hosts string, credentials gnats.Opt
 
 // DecodeNatsMsg will decode the nats message into the provided interface.
 func DecodeNatsMsg(msg *gnats.Msg, v interface{}) error {
-	encoding := msg.Header.Get("content-encoding")
+	encoding := GetContentEncodingFromHeader(msg)
 	gzipped := encoding == "gzip/json"
 	msgpacked := encoding == "msgpack"
 	var err error
