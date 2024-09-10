@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -67,7 +68,20 @@ func TarGz(srcDir string, outfile *os.File) error {
 	if err := zr.Close(); err != nil {
 		return err
 	}
-	//
 
 	return nil
+}
+
+// TarGzipDir will tar and gzip a directory and return the path to the file. You must delete the file when done.
+func TarGzipDir(srcDir string) (string, error) {
+	tmpfn, err := os.CreateTemp("", "*.tar.gz")
+	if err != nil {
+		return "", fmt.Errorf("tmp: %w", err)
+	}
+	defer tmpfn.Close()
+
+	if err := TarGz(srcDir, tmpfn); err != nil {
+		return "", err
+	}
+	return tmpfn.Name(), nil
 }
