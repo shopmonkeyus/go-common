@@ -26,6 +26,7 @@ const (
 )
 
 type Request interface {
+	Method() string
 	URL() string
 	Headers() map[string]string
 	Payload() []byte
@@ -33,10 +34,15 @@ type Request interface {
 }
 
 type HTTPRequest struct {
+	method      string
 	url         string
 	headers     map[string]string
 	payload     []byte
 	maxAttempts uint
+}
+
+func (r *HTTPRequest) Method() string {
+	return r.method
 }
 
 func (r *HTTPRequest) URL() string {
@@ -56,8 +62,18 @@ func (r *HTTPRequest) MaxAttempts() uint {
 }
 
 // NewHTTPRequest creates a new HTTPRequest that implements the Request interface.
-func NewHTTPRequest(url string, headers map[string]string, payload []byte, maxAttempts uint) Request {
-	return &HTTPRequest{url, headers, payload, maxAttempts}
+func NewHTTPRequest(method string, url string, headers map[string]string, payload []byte, maxAttempts uint) Request {
+	return &HTTPRequest{method, url, headers, payload, maxAttempts}
+}
+
+// NewHTTPGetRequest creates a new HTTPRequest that implements the Request interface for GET requests.
+func NewHTTPGetRequest(url string, headers map[string]string, maxAttempts uint) Request {
+	return &HTTPRequest{ghttp.MethodGet, url, headers, nil, maxAttempts}
+}
+
+// NewHTTPPostRequest creates a new HTTPRequest that implements the Request interface for POST requests.
+func NewHTTPPostRequest(url string, headers map[string]string, payload []byte, maxAttempts uint) Request {
+	return &HTTPRequest{ghttp.MethodPost, url, headers, payload, maxAttempts}
 }
 
 type Response struct {
@@ -162,7 +178,12 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 	for attempt < maxAttempts {
 		attempt++
 		reqId := h.generateRequestId(req)
-		hreq, err := ghttp.NewRequestWithContext(c, ghttp.MethodPost, req.URL(), bytes.NewBuffer(req.Payload()))
+		var body io.Reader
+		payload := req.Payload()
+		if len(payload) > 0 {
+			body = bytes.NewBuffer(payload)
+		}
+		hreq, err := ghttp.NewRequestWithContext(c, req.Method(), req.URL(), body)
 		if err != nil {
 			return nil, err
 		}
@@ -307,8 +328,8 @@ func WithRecorder(recorder Recorder) ConfigOpt {
 	}
 }
 
-// WithMax sets the max number of concurrent requests.
-func WithMax(max uint64) ConfigOpt {
+// WithMaxConcurrency sets the max number of concurrent requests.
+func WithMaxConcurrency(max uint64) ConfigOpt {
 	return func(opts *configOpts) {
 		opts.max = max
 	}

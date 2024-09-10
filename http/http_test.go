@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	ghttp "net/http"
 	"net/http/httptest"
 	"strconv"
@@ -20,14 +21,21 @@ func TestHTTPOK(t *testing.T) {
 		assert.Equal(t, "1", r.Header.Get("X-Attempt"))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(ghttp.StatusOK)
-		w.Write([]byte(`{"message":"hello"}`))
+		w.Write([]byte(fmt.Sprintf(`{"message":"%s"}`, r.Method)))
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 1))
+	resp, err := h.Deliver(context.Background(), NewHTTPPostRequest(srv.URL, map[string]string{}, nil, 1))
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusOK, resp.StatusCode)
-	assert.Equal(t, `{"message":"hello"}`, string(resp.Body))
+	assert.Equal(t, `{"message":"POST"}`, string(resp.Body))
+	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
+	assert.Equal(t, uint(1), resp.Attempts)
+	resp, err = h.Deliver(context.Background(), NewHTTPGetRequest(srv.URL, map[string]string{}, 1))
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Equal(t, ghttp.StatusOK, resp.StatusCode)
+	assert.Equal(t, `{"message":"GET"}`, string(resp.Body))
 	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
 	assert.Equal(t, uint(1), resp.Attempts)
 }
@@ -49,7 +57,7 @@ func TestHTTPRetry(t *testing.T) {
 		w.Write([]byte(`{"message":"hello"}`))
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 10))
+	resp, err := h.Deliver(context.Background(), NewHTTPRequest(ghttp.MethodPost, srv.URL, map[string]string{}, nil, 10))
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusOK, resp.StatusCode)
@@ -75,7 +83,7 @@ func TestHTTPRetryWithRetryAfterHeader(t *testing.T) {
 		w.Write([]byte(`{"message":"hello"}`))
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 3))
+	resp, err := h.Deliver(context.Background(), NewHTTPRequest(ghttp.MethodPost, srv.URL, map[string]string{}, nil, 3))
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusOK, resp.StatusCode)
@@ -102,7 +110,7 @@ func TestHTTPRetryWithRetryAfterHeaderAsTime(t *testing.T) {
 		w.Write([]byte(`{"message":"hello"}`))
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 3))
+	resp, err := h.Deliver(context.Background(), NewHTTPRequest(ghttp.MethodPost, srv.URL, map[string]string{}, nil, 3))
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusOK, resp.StatusCode)
@@ -125,7 +133,7 @@ func TestHTTPRetryTimeout(t *testing.T) {
 		w.WriteHeader(ghttp.StatusBadGateway)
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 3))
+	resp, err := h.Deliver(context.Background(), NewHTTPRequest(ghttp.MethodPost, srv.URL, map[string]string{}, nil, 3))
 	assert.Error(t, err, ErrTooManyAttempts)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusBadGateway, resp.StatusCode)
@@ -159,7 +167,7 @@ func TestHTTPRecorder(t *testing.T) {
 		w.WriteHeader(ghttp.StatusBadGateway)
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 3))
+	resp, err := h.Deliver(context.Background(), NewHTTPRequest(ghttp.MethodPost, srv.URL, map[string]string{}, nil, 3))
 	assert.Error(t, err, ErrTooManyAttempts)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusBadGateway, resp.StatusCode)
@@ -180,7 +188,7 @@ func TestHTTPTimeout(t *testing.T) {
 		w.WriteHeader(ghttp.StatusOK)
 	}))
 	defer srv.Close()
-	resp, err := h.Deliver(context.Background(), NewHTTPRequest(srv.URL, map[string]string{}, nil, 0))
+	resp, err := h.Deliver(context.Background(), NewHTTPRequest(ghttp.MethodPost, srv.URL, map[string]string{}, nil, 0))
 	assert.Error(t, err, context.DeadlineExceeded)
 	assert.Nil(t, resp)
 }
