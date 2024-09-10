@@ -19,76 +19,76 @@ const (
 
 // getters
 
-func getRegionFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, RegionHdr)
+func GetRegionFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, RegionHdr)
 }
 
-func getRequestIdFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, RequestIdHdr)
+func GetRequestIdFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, RequestIdHdr)
 }
 
-func getCompanyIdFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, CompanyIdHdr)
+func GetCompanyIdFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, CompanyIdHdr)
 }
 
-func getLocationIdFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, LocationIdHdr)
+func GetLocationIdFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, LocationIdHdr)
 }
 
-func getUserIdFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, UserIdHdr)
+func GetUserIdFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, UserIdHdr)
 }
 
-func getSessionIdFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, SessionIdHdr)
+func GetSessionIdFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, SessionIdHdr)
 }
 
-func getMsgIdFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, nats.MsgIdHdr)
+func GetMsgIdFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, nats.MsgIdHdr)
 }
 
-func getContentEncodingFromHeader(m *nats.Msg) string {
-	return getHeaderValue(m, ContentEncodingHdr)
+func GetContentEncodingFromHeader(m *nats.Msg) string {
+	return GetHeaderValue(m, ContentEncodingHdr)
 }
 
-func getHeaderValue(m *nats.Msg, header string) string {
+func GetHeaderValue(m *nats.Msg, header string) string {
 	return m.Header.Get(header)
 }
 
 // setters
 
-func setRegionHeader(m *nats.Msg, value string) {
-	setHeader(m, RegionHdr, value)
+func SetRegionHeader(m *nats.Msg, value string) {
+	SetHeader(m, RegionHdr, value)
 }
 
-func setRequestIdHeader(m *nats.Msg, value string) {
-	setHeader(m, RequestIdHdr, value)
+func SetRequestIdHeader(m *nats.Msg, value string) {
+	SetHeader(m, RequestIdHdr, value)
 }
 
-func setCompanyIdHeader(m *nats.Msg, value string) {
-	setHeader(m, CompanyIdHdr, value)
+func SetCompanyIdHeader(m *nats.Msg, value string) {
+	SetHeader(m, CompanyIdHdr, value)
 }
 
-func setLocationIdHeader(m *nats.Msg, value string) {
-	setHeader(m, LocationIdHdr, value)
+func SetLocationIdHeader(m *nats.Msg, value string) {
+	SetHeader(m, LocationIdHdr, value)
 }
 
-func setUserIdHeader(m *nats.Msg, value string) {
-	setHeader(m, UserIdHdr, value)
+func SetUserIdHeader(m *nats.Msg, value string) {
+	SetHeader(m, UserIdHdr, value)
 }
 
-func setSessionIdHeader(m *nats.Msg, value string) {
-	setHeader(m, SessionIdHdr, value)
+func SetSessionIdHeader(m *nats.Msg, value string) {
+	SetHeader(m, SessionIdHdr, value)
 }
 
-func setMsgIdHeader(m *nats.Msg, value string) {
-	setHeader(m, nats.MsgIdHdr, value)
+func SetMsgIdHeader(m *nats.Msg, value string) {
+	SetHeader(m, nats.MsgIdHdr, value)
 }
 
-func setContentEncodingHeader(m *nats.Msg, value string) {
-	setHeader(m, ContentEncodingHdr, value)
+func SetContentEncodingHeader(m *nats.Msg, value string) {
+	SetHeader(m, ContentEncodingHdr, value)
 }
 
-func setHeader(m *nats.Msg, header string, value string) {
+func SetHeader(m *nats.Msg, header string, value string) {
 	m.Header.Set(header, value)
 }

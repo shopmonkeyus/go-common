@@ -12,8 +12,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
+	gnats "github.com/shopmonkeyus/go-common/nats"
 	cstring "github.com/shopmonkeyus/go-common/string"
-	headers "github.com/shopmonkeyus/go-common/nats/headers"
 )
 
 var ErrTrackerClosed = errors.New("analytics: closed")
@@ -266,18 +266,18 @@ func (t *analytics) run() {
 				locationId = "NONE"
 			}
 			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s", companyId, locationId, config.event.Name))
-			headers.setMsgIdHeader(msg, config.MessageId)
+			gnats.SetMsgIdHeader(msg, config.MessageId)
 			if companyId != "NONE" {
-				headers.setCompanyIdHeader(msg, companyId)
+				gnats.SetCompanyIdHeader(msg, companyId)
 			}
 			if config.UserId != "" {
-				headers.setUserIdHeader(msg, config.UserId)
+				gnats.SetUserIdHeader(msg, config.UserId)
 			}
 			if locationId != "NONE" {
-				headers.setLocationIdHeader(msg, locationId)
+				gnats.SetLocationIdHeader(msg, locationId)
 			}
 			if config.Region != "" {
-				headers.setRegionHeader(msg, config.Region)
+				gnats.SetRegionHeader(msg, config.Region)
 			}
 			msg.Data = config.buf
 			var tries int
