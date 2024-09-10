@@ -52,3 +52,39 @@ func getContentEncodingFromHeader(m *nats.Msg) string {
 func getHeaderValue(m *nats.Msg, header string) string {
 	return m.Header.Get(header)
 }
+
+func setRegionHeader(m *nats.Msg, value string) string {
+	return setHeader(m, RegionHdr, value)
+}
+
+func setRequestIdHeader(m *nats.Msg, value string) string {
+	return setHeader(m, RequestIdHdr, value)
+}
+
+func setCompanyIdHeader(m *nats.Msg, value string) string {
+	return setHeader(m, CompanyIdHdr, value)
+}
+
+func setUserIdHeader(m *nats.Msg, value string) string {
+	return setHeader(m, UserIdHdr, value)
+}
+
+func setLocationIdHeader(m *nats.Msg, value string) string {
+	return setHeader(m, LocationIdHdr, value)
+}
+
+func setSessionIdHeader(m *nats.Msg, value string) string {
+	return setHeader(m, SessionIdHdr, value)
+}
+
+func setMsgIdHeader(m *nats.Msg, value string) string {
+	return setHeader(m, nats.MsgIdHdr, value)
+}
+
+func setContentEncodingHeader(m *nats.Msg, value string) string {
+	return setHeader(m, ContentEncodingHdr, value)
+}
+
+func setHeader(m *nats.Msg, header string, value string) string {
+	return m.Header.Get(header)
+}
