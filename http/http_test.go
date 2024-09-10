@@ -31,6 +31,7 @@ func TestHTTPOK(t *testing.T) {
 	assert.Equal(t, ghttp.StatusOK, resp.StatusCode)
 	assert.Equal(t, `{"message":"hello"}`, string(resp.Body))
 	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
+	assert.Equal(t, uint(1), resp.Attempts)
 }
 
 func TestHTTPRetry(t *testing.T) {
@@ -58,6 +59,7 @@ func TestHTTPRetry(t *testing.T) {
 	assert.Equal(t, `{"message":"hello"}`, string(resp.Body))
 	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
 	assert.Equal(t, 3, count)
+	assert.Equal(t, uint(3), resp.Attempts)
 }
 
 func TestHTTPRetryWithRetryAfterHeader(t *testing.T) {
@@ -85,13 +87,14 @@ func TestHTTPRetryWithRetryAfterHeader(t *testing.T) {
 	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
 	assert.Equal(t, 2, count)
 	assert.True(t, time.Since(ts) > 2*time.Second)
+	assert.Equal(t, uint(2), resp.Attempts)
+	assert.True(t, resp.Latency > 2*time.Second)
 }
 
 func TestHTTPRetryWithRetryAfterHeaderAsTime(t *testing.T) {
 	c := cache.NewInMemory(context.Background(), time.Second)
 	h := New(WithCache(c))
 	var count int
-	ts := time.Now()
 	srv := httptest.NewServer(ghttp.HandlerFunc(func(w ghttp.ResponseWriter, r *ghttp.Request) {
 		count++
 		if count < 2 {
@@ -111,7 +114,8 @@ func TestHTTPRetryWithRetryAfterHeaderAsTime(t *testing.T) {
 	assert.Equal(t, `{"message":"hello"}`, string(resp.Body))
 	assert.Equal(t, "application/json", resp.Headers["Content-Type"])
 	assert.Equal(t, 2, count)
-	assert.True(t, time.Since(ts) > 2*time.Second)
+	assert.Equal(t, uint(2), resp.Attempts)
+	assert.True(t, resp.Latency > 2*time.Second)
 }
 
 func TestHTTPRetryTimeout(t *testing.T) {
@@ -130,20 +134,20 @@ func TestHTTPRetryTimeout(t *testing.T) {
 	assert.Error(t, err, ErrTooManyAttempts)
 	assert.NotNil(t, resp)
 	assert.Equal(t, ghttp.StatusBadGateway, resp.StatusCode)
+	assert.Equal(t, uint(3), resp.Attempts)
+	assert.True(t, resp.Latency > 0)
 }
 
 type testRecord struct {
 	req  Request
 	resp *Response
-	dur  time.Duration
 }
 
 var _ Recorder = (*testRecord)(nil)
 
-func (r *testRecord) OnResponse(ctx context.Context, req Request, resp *Response, latency time.Duration) {
+func (r *testRecord) OnResponse(ctx context.Context, req Request, resp *Response) {
 	r.req = req
 	r.resp = resp
-	r.dur = latency
 }
 
 func TestHTTPRecorder(t *testing.T) {

@@ -65,11 +65,13 @@ type Response struct {
 	StatusCode int               `json:"statusCode"`
 	Body       []byte            `json:"body,omitempty"`
 	Headers    map[string]string `json:"headers"`
+	Attempts   uint              `json:"attempts"`
+	Latency    time.Duration     `json:"latency"`
 }
 
 // Recorder is an interface for recording request / responses.
 type Recorder interface {
-	OnResponse(ctx context.Context, req Request, resp *Response, latency time.Duration)
+	OnResponse(ctx context.Context, req Request, resp *Response)
 }
 
 type Http interface {
@@ -78,8 +80,6 @@ type Http interface {
 }
 
 type http struct {
-	cache     cache.Cache
-	dns       dns.DNS
 	transport *ghttp.Transport
 	timeout   time.Duration // set for testing but defaults to 55 seconds otherwise
 	dur       time.Duration // set for testing but defaults to 1 second otherwise
@@ -106,7 +106,7 @@ func (h *http) shouldRetry(resp *ghttp.Response, err error) bool {
 	return false
 }
 
-func (h *http) toResponse(resp *ghttp.Response) (*Response, error) {
+func (h *http) toResponse(resp *ghttp.Response, attempt uint, latency time.Duration) (*Response, error) {
 	if resp == nil {
 		return nil, nil
 	}
@@ -127,6 +127,8 @@ func (h *http) toResponse(resp *ghttp.Response) (*Response, error) {
 		StatusCode: resp.StatusCode,
 		Body:       body,
 		Headers:    headers,
+		Attempts:   attempt,
+		Latency:    latency,
 	}, nil
 }
 
@@ -138,6 +140,7 @@ func (h *http) generateRequestId(req Request) string {
 }
 
 func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
+	started := time.Now()
 	if err := h.semaphore.Acquire(ctx, 1); err != nil {
 		return nil, fmt.Errorf("error acquiring semaphore: %w", err)
 	}
@@ -170,13 +173,12 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 		hreq.Header.Set("User-Agent", userAgentHeaderValue)
 		hreq.Header.Set("X-Request-Id", reqId)
 		hreq.Header.Set("X-Attempt", strconv.Itoa(int(attempt)))
-		started := time.Now()
 		resp, err = h.transport.RoundTrip(hreq)
 		if err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
 			return nil, err
 		}
 		if h.recorder != nil && resp != nil /*&& !req.TestOnly*/ {
-			r, err := h.toResponse(resp)
+			r, err := h.toResponse(resp, attempt, time.Since(started))
 			if err != nil {
 				return nil, fmt.Errorf("error converting response: %w", err)
 			}
@@ -184,7 +186,7 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 			headers["User-Agent"] = userAgentHeaderValue
 			headers["X-Request-Id"] = reqId
 			headers["X-Attempt"] = strconv.Itoa(int(attempt))
-			h.recorder.OnResponse(ctx, req, r, time.Since(started))
+			h.recorder.OnResponse(ctx, req, r)
 			response = r // set it so we don't try and re-read the body again
 		}
 		if h.shouldRetry(resp, err) /*&& !req.TestOnly*/ {
@@ -224,12 +226,12 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 			return nil, err
 		}
 		if response == nil {
-			return h.toResponse(resp)
+			return h.toResponse(resp, attempt, time.Since(started))
 		}
 		return response, nil
 	}
 	if response == nil && resp != nil {
-		r, err := h.toResponse(resp)
+		r, err := h.toResponse(resp, attempt, time.Since(started))
 		if err != nil {
 			return nil, err
 		}
@@ -285,8 +287,6 @@ func New(opts ...ConfigOpt) Http {
 		transport = ghttp.DefaultTransport.(*ghttp.Transport)
 	}
 	return &http{
-		cache:     c.cache,
-		dns:       c.dns,
 		transport: transport,
 		timeout:   c.timeout,
 		dur:       c.dur,
