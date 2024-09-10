@@ -1,10 +1,35 @@
 package slice
 
+import "strings"
+
+type withOpts struct {
+	caseInsensitive bool
+}
+
+type withOptsFunc func(opts *withOpts)
+
+// WithCaseInsensitive will make the contains functions case insensitive.
+func WithCaseInsensitive() withOptsFunc {
+	return func(opts *withOpts) {
+		opts.caseInsensitive = true
+	}
+}
+
 // Contains returns true if the slice contains the value.
-func Contains(slice []string, val string) bool {
+func Contains(slice []string, val string, opts ...withOptsFunc) bool {
+	var withOpts withOpts
+	for _, opt := range opts {
+		opt(&withOpts)
+	}
 	for _, s := range slice {
-		if s == val {
-			return true
+		if withOpts.caseInsensitive {
+			if strings.EqualFold(s, val) {
+				return true
+			}
+		} else {
+			if s == val {
+				return true
+			}
 		}
 	}
 	return false

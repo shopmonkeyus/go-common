@@ -1,20 +1,11 @@
 package string
 
-import "strings"
+import "github.com/shopmonkeyus/go-common/slice"
 
 // Contains returns true if the search string is found in the slice
-func Contains(slice []string, search string, caseInsensitive bool) bool {
-	for _, s := range slice {
-		if caseInsensitive {
-			if strings.EqualFold(s, search) {
-				return true
-			}
-			continue
-		}
-
-		if s == search {
-			return true
-		}
+func Contains(needle []string, haystack string, caseInsensitive bool) bool {
+	if caseInsensitive {
+		return slice.Contains(needle, haystack, slice.WithCaseInsensitive())
 	}
-	return false
+	return slice.Contains(needle, haystack)
 }

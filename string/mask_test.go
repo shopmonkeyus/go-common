@@ -81,3 +81,17 @@ func TestMaskArguments(t *testing.T) {
 	}
 
 }
+
+func TestMaskedEmail(t *testing.T) {
+	tests := []struct {
+		email    string
+		expected string
+	}{
+		{"test@example.com", "te**@exa****.com"},
+		{"user@example.co.uk", "us**@exa****.co.uk"},
+	}
+	for _, test := range tests {
+		result := MaskEmail(test.email)
+		assert.Equal(t, test.expected, result)
+	}
+}

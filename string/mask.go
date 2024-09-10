@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// Mask will mask a string by replacing the middle with asterisks.
 func Mask(s string) string {
 	l := len(s)
 	if l == 0 {

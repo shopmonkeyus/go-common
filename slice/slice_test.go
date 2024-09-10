@@ -14,6 +14,19 @@ func TestContains(t *testing.T) {
 	}
 }
 
+func TestContainsCaseInsensitive(t *testing.T) {
+	slice := []string{"a", "b", "c"}
+	if !Contains(slice, "a", WithCaseInsensitive()) {
+		t.Errorf("expected true, got false")
+	}
+	if !Contains(slice, "A", WithCaseInsensitive()) {
+		t.Errorf("expected true, got false")
+	}
+	if Contains(slice, "d") {
+		t.Errorf("expected false, got true")
+	}
+}
+
 func TestContainsAny(t *testing.T) {
 	slice := []string{"a", "b", "c"}
 	if !ContainsAny(slice, "a", "d") {
