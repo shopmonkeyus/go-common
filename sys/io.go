@@ -1,10 +1,12 @@
 package sys
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 )
 
 // CopyFile will copy src to dst
@@ -64,5 +66,61 @@ func CopyDir(src string, dst string) error {
 			}
 		}
 	}
+	return nil
+}
+
+// Exists returns true if the filename or directory specified by fn exists.
+func Exists(fn string) bool {
+	if _, err := os.Stat(fn); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+// ListDir will return an array of files recursively walking into sub directories
+func ListDir(dir string) ([]string, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]string, 0)
+	for _, file := range files {
+		if file.IsDir() {
+			newres, err := ListDir(filepath.Join(dir, file.Name()))
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, newres...)
+		} else {
+			if file.Name() == ".DS_Store" {
+				continue
+			}
+			res = append(res, filepath.Join(dir, file.Name()))
+		}
+	}
+	return res, nil
+}
+
+// GzipFile compresses a file using gzip.
+func GzipFile(filepath string) error {
+	infile, err := os.Open(filepath)
+	if err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+	defer infile.Close()
+
+	outfile, err := os.Create(filepath + ".gz")
+	if err != nil {
+		return fmt.Errorf("create: %w", err)
+	}
+	defer outfile.Close()
+
+	zr := gzip.NewWriter(outfile)
+	defer zr.Close()
+	_, err = io.Copy(zr, infile)
+	if err != nil {
+		return fmt.Errorf("copy: %w", err)
+	}
+
 	return nil
 }
