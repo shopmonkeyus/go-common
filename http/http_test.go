@@ -8,14 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shopmonkeyus/go-common/cache"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/semaphore"
 )
 
 func TestHTTPOK(t *testing.T) {
-	c := cache.NewInMemory(context.Background(), time.Second)
-	h := New(WithCache(c))
+	h := New()
 	srv := httptest.NewServer(ghttp.HandlerFunc(func(w ghttp.ResponseWriter, r *ghttp.Request) {
 		assert.Contains(t, r.Header, "User-Agent")
 		assert.Contains(t, r.Header, "X-Request-Id")
@@ -35,8 +33,7 @@ func TestHTTPOK(t *testing.T) {
 }
 
 func TestHTTPRetry(t *testing.T) {
-	c := cache.NewInMemory(context.Background(), time.Second)
-	h := New(WithCache(c))
+	h := New()
 	var count int
 	srv := httptest.NewServer(ghttp.HandlerFunc(func(w ghttp.ResponseWriter, r *ghttp.Request) {
 		count++
@@ -63,8 +60,7 @@ func TestHTTPRetry(t *testing.T) {
 }
 
 func TestHTTPRetryWithRetryAfterHeader(t *testing.T) {
-	c := cache.NewInMemory(context.Background(), time.Second)
-	h := New(WithCache(c))
+	h := New()
 	var count int
 	ts := time.Now()
 	srv := httptest.NewServer(ghttp.HandlerFunc(func(w ghttp.ResponseWriter, r *ghttp.Request) {
@@ -92,8 +88,7 @@ func TestHTTPRetryWithRetryAfterHeader(t *testing.T) {
 }
 
 func TestHTTPRetryWithRetryAfterHeaderAsTime(t *testing.T) {
-	c := cache.NewInMemory(context.Background(), time.Second)
-	h := New(WithCache(c))
+	h := New()
 	var count int
 	srv := httptest.NewServer(ghttp.HandlerFunc(func(w ghttp.ResponseWriter, r *ghttp.Request) {
 		count++

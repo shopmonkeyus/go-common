@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/shopmonkeyus/go-common/cache"
 	"github.com/shopmonkeyus/go-common/dns"
 	cstr "github.com/shopmonkeyus/go-common/string"
 	"golang.org/x/sync/semaphore"
@@ -243,7 +242,6 @@ func (h *http) Deliver(ctx context.Context, req Request) (*Response, error) {
 type configOpts struct {
 	recorder Recorder
 	max      uint64
-	cache    cache.Cache
 	dns      dns.DNS
 	timeout  time.Duration
 	dur      time.Duration
@@ -292,13 +290,6 @@ func New(opts ...ConfigOpt) Http {
 		dur:       c.dur,
 		recorder:  c.recorder,
 		semaphore: semaphore.NewWeighted(int64(c.max)),
-	}
-}
-
-// WithCache sets the cache for the http client.
-func WithCache(cache cache.Cache) ConfigOpt {
-	return func(opts *configOpts) {
-		opts.cache = cache
 	}
 }
 
