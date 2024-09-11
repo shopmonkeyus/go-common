@@ -187,7 +187,7 @@ func Fork(args ForkArgs) (*ForkResult, error) {
 			defer stdout.Close()
 		}
 		if args.WriteToStd {
-			cmd.Stdout = io.MultiWriter(stdout, os.Stdout)
+			cmd.Stdout = os.Stdout
 			cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
 		} else {
 			cmd.Stderr = stderr
