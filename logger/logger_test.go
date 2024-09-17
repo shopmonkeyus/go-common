@@ -47,3 +47,57 @@ func TestCombinedLogger(t *testing.T) {
 	assert.Len(t, log.Logs, 1)
 	assert.Equal(t, `{"timestamp":"2023-10-22T12:30:00Z","message":"Ayyyyyy","severity":"INFO"}`, string(sink.buf))
 }
+
+func TestJSONLogger(t *testing.T) {
+
+	logger := NewJSONLogger().(*jsonLogger)
+
+	tests := []struct {
+		level            LogLevel
+		shouldContain    []string
+		shouldNotContain []string
+	}{
+		{
+			level:            LevelTrace,
+			shouldContain:    []string{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"},
+			shouldNotContain: []string{},
+		},
+		{
+			level:            LevelDebug,
+			shouldContain:    []string{"DEBUG", "INFO", "WARN", "ERROR"},
+			shouldNotContain: []string{"TRACE"},
+		},
+		{
+			level:            LevelInfo,
+			shouldContain:    []string{"INFO", "WARN", "ERROR"},
+			shouldNotContain: []string{"TRACE", "DEBUG"},
+		},
+		{
+			level:            LevelWarn,
+			shouldContain:    []string{"WARN", "ERROR"},
+			shouldNotContain: []string{"TRACE", "DEBUG", "INFO"},
+		},
+		{
+			level:            LevelError,
+			shouldContain:    []string{"ERROR"},
+			shouldNotContain: []string{"TRACE", "DEBUG", "INFO", "WARN"},
+		},
+	}
+
+	for _, tt := range tests {
+		logger.SetLogLevel(tt.level)
+		output := captureOutput(func() {
+			logger.Trace("This is a trace message")
+			logger.Debug("This is a debug message")
+			logger.Info("This is an info message")
+			logger.Warn("This is a warn message")
+			logger.Error("This is an error message")
+		})
+		for _, shouldContain := range tt.shouldContain {
+			assert.Contains(t, output, shouldContain)
+		}
+		for _, shouldNotContain := range tt.shouldNotContain {
+			assert.NotContains(t, output, shouldNotContain)
+		}
+	}
+}
