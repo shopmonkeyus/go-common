@@ -20,6 +20,7 @@ type JSONLogEntry struct {
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	// Logs Explorer allows filtering and display of this as `jsonPayload.component`.
 	Component string `json:"component,omitempty"`
+	logLevel  LogLevel
 }
 
 // String renders an entry structure to the JSON format expected by Cloud Logging.
@@ -42,6 +43,7 @@ type jsonLogger struct {
 	sinkLogLevel LogLevel
 	noConsole    bool
 	ts           *time.Time // for unit testing
+	logLevel     LogLevel
 }
 
 var _ Logger = (*jsonLogger)(nil)
@@ -95,6 +97,7 @@ func (c *jsonLogger) With(metadata map[string]interface{}) Logger {
 		noConsole:    c.noConsole,
 		sink:         c.sink,
 		sinkLogLevel: c.sinkLogLevel,
+		logLevel:     c.logLevel,
 	}
 }
 
@@ -112,6 +115,9 @@ func (c *jsonLogger) tokenize(val string) string {
 }
 
 func (c *jsonLogger) Log(level LogLevel, severity string, msg string, args ...interface{}) {
+	if level < c.logLevel && level < c.sinkLogLevel {
+		return
+	}
 	_msg := msg
 	if len(args) > 0 {
 		_msg = fmt.Sprintf(msg, args...)
@@ -124,7 +130,7 @@ func (c *jsonLogger) Log(level LogLevel, severity string, msg string, args ...in
 		Component: c.tokenize(c.component),
 		Timestamp: time.Now(),
 	}
-	if !c.noConsole {
+	if !c.noConsole && level >= c.logLevel {
 		log.Println(entry)
 	}
 	if c.sink != nil && level >= c.sinkLogLevel {
@@ -163,9 +169,17 @@ func (c *jsonLogger) Fatal(msg string, args ...interface{}) {
 	c.Log(LevelError, "ERROR", msg, args...)
 }
 
+func (c *jsonLogger) SetLogLevel(level LogLevel) {
+	c.logLevel = level
+}
+
 // NewJSONLogger returns a new Logger instance which can be used for structured logging
-func NewJSONLogger() Logger {
-	return &jsonLogger{}
+func NewJSONLogger(levels ...LogLevel) Logger {
+	if len(levels) > 0 {
+		return &jsonLogger{logLevel: levels[0]}
+	}
+	return &jsonLogger{logLevel: LevelDebug}
+
 }
 
 // NewJSONLoggerWithSink returns a new Logger instance using a sink and suppressing the console logging
