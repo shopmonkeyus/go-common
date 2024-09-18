@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -99,5 +100,60 @@ func TestJSONLogger(t *testing.T) {
 		for _, shouldNotContain := range tt.shouldNotContain {
 			assert.NotContains(t, output, shouldNotContain)
 		}
+	}
+}
+
+func TestJSONLoggerWithEnvLevel(t *testing.T) {
+
+	tests := []struct {
+		level            string
+		shouldContain    []string
+		shouldNotContain []string
+	}{
+		{
+			level:            "TRACE",
+			shouldContain:    []string{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"},
+			shouldNotContain: []string{},
+		},
+		{
+			level:            "DEBUG",
+			shouldContain:    []string{"DEBUG", "INFO", "WARN", "ERROR"},
+			shouldNotContain: []string{"TRACE"},
+		},
+		{
+			level:            "INFO",
+			shouldContain:    []string{"INFO", "WARN", "ERROR"},
+			shouldNotContain: []string{"TRACE", "DEBUG"},
+		},
+		{
+			level:            "WARN",
+			shouldContain:    []string{"WARN", "ERROR"},
+			shouldNotContain: []string{"TRACE", "DEBUG", "INFO"},
+		},
+		{
+			level:            "ERROR",
+			shouldContain:    []string{"ERROR"},
+			shouldNotContain: []string{"TRACE", "DEBUG", "INFO", "WARN"},
+		},
+	}
+
+	for _, tt := range tests {
+		os.Setenv("SM_LOG_LEVEL", tt.level)
+		logger := NewJSONLogger().(*jsonLogger)
+
+		output := captureOutput(func() {
+			logger.Trace("This is a trace message")
+			logger.Debug("This is a debug message")
+			logger.Info("This is an info message")
+			logger.Warn("This is a warn message")
+			logger.Error("This is an error message")
+		})
+		for _, shouldContain := range tt.shouldContain {
+			assert.Contains(t, output, shouldContain)
+		}
+		for _, shouldNotContain := range tt.shouldNotContain {
+			assert.NotContains(t, output, shouldNotContain)
+		}
+		os.Unsetenv("SM_LOG_LEVEL")
 	}
 }

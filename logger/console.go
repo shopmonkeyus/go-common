@@ -204,5 +204,7 @@ func NewConsoleLogger(levels ...LogLevel) SinkLogger {
 	if len(levels) > 0 {
 		return (&consoleLogger{logLevel: levels[0], sinkLogLevel: LevelNone}).Clone(nil, nil)
 	}
-	return (&consoleLogger{logLevel: LevelDebug, sinkLogLevel: LevelNone}).Clone(nil, nil)
+	level := GetLevelFromEnv()
+
+	return (&consoleLogger{logLevel: level, sinkLogLevel: LevelNone}).Clone(nil, nil)
 }
