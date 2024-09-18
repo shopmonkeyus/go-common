@@ -2,7 +2,9 @@ package logger
 
 import (
 	"io"
+	"os"
 	"regexp"
+	"strings"
 )
 
 // LogLevel defines the level of logging
@@ -16,6 +18,25 @@ const (
 	LevelError
 	LevelNone
 )
+
+// GetLevelFrom env will look at the environment var `SM_LOG_LEVEL` and convert it into the appropriate LogLevel
+func GetLevelFromEnv() LogLevel {
+	s := os.Getenv("SM_LOG_LEVEL")
+	switch strings.ToLower(s) { // Convert the string to lowercase to make it case-insensitive
+	case "trace":
+		return LevelTrace
+	case "debug":
+		return LevelDebug
+	case "info":
+		return LevelInfo
+	case "warn":
+		return LevelWarn
+	case "error":
+		return LevelError
+	default:
+		return LevelDebug // Return an unknown or default value for invalid strings
+	}
+}
 
 type Sink io.Writer
 

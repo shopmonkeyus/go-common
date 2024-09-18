@@ -178,7 +178,8 @@ func NewJSONLogger(levels ...LogLevel) Logger {
 	if len(levels) > 0 {
 		return &jsonLogger{logLevel: levels[0]}
 	}
-	return &jsonLogger{logLevel: LevelDebug}
+	level := GetLevelFromEnv()
+	return &jsonLogger{logLevel: level}
 
 }
 
