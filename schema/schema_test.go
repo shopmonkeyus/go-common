@@ -28,7 +28,7 @@ func TestNewModelRegistry(t *testing.T) {
 	var m Model
 	m.Public = true
 	m.ModelVersion = "1234"
-	fetcher := &testFetcher{io.NopCloser(bytes.NewReader([]byte(cstr.JSONStringify(m)))), nil, false}
+	fetcher := &testFetcher{io.NopCloser(bytes.NewReader([]byte(cstr.JSONStringify(Result{Success: true, Model: &m})))), nil, false}
 	r := NewModelRegistry(fetcher)
 	model, err := r.Get(context.Background(), "table")
 	if err != nil {
@@ -62,7 +62,7 @@ func TestNewModelRegistryWithAPIFetcher(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, cstr.JSONStringify(m))
+		fmt.Fprintln(w, cstr.JSONStringify(Result{Success: true, Model: &m}))
 	}))
 	defer ts.Close()
 	fetcher := NewAPIFetcher(ts.URL, "test")

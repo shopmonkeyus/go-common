@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,6 +28,11 @@ type Model struct {
 	Changefeed   *Changefeed `json:"changefeed"`
 	ModelVersion string      `json:"modelVersion"`
 	Public       bool        `json:"public"`
+}
+
+type Result struct {
+	Success bool   `json:"success"`
+	Model   *Model `json:"data"`
 }
 
 type Fetcher interface {
@@ -60,6 +66,10 @@ func (f *APIFetcher) FetchTable(ctx context.Context, table string) (io.ReadClose
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch model: %s", resp.Status)
 	}
 
 	return resp.Body, nil
@@ -100,18 +110,22 @@ func (r *modelRegistry) Get(ctx context.Context, table string) (*Model, error) {
 	}
 	defer rc.Close()
 
-	var model Model
-	if err := json.NewDecoder(rc).Decode(&model); err != nil {
+	var res Result
+	if err := json.NewDecoder(rc).Decode(&res); err != nil {
 		return nil, err
 	}
 
+	if !res.Success {
+		return nil, fmt.Errorf("failed to fetch model: %s", table)
+	}
+
 	item := &modelCache{
-		model:   &model,
+		model:   res.Model,
 		fetched: time.Now(),
 	}
 	r.models[table] = item
 
-	return &model, nil
+	return item.model, nil
 }
 
 // NewModelRegistry creates a new model registry using the provided fetcher.
