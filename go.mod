@@ -8,7 +8,7 @@ require (
 	github.com/cockroachdb/errors v1.11.3
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/mattn/go-isatty v0.0.20
-	github.com/nats-io/nats-server/v2 v2.10.20
+	github.com/nats-io/nats-server/v2 v2.10.21
 	github.com/nats-io/nats.go v1.37.0
 	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38
 	github.com/stretchr/testify v1.9.0
