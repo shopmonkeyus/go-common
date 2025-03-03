@@ -16,6 +16,7 @@ const (
 	Sandbox Environment = "sandbox"
 	Edge    Environment = "edge"
 	Dev     Environment = "dev"
+	RC      Environment = "rc"
 )
 
 func (e Environment) String() string {
@@ -34,6 +35,8 @@ func parseEnvironment(env string) (Environment, error) {
 		return Sandbox, nil
 	case "edge":
 		return Edge, nil
+	case "rc":
+		return RC, nil
 	case "dev", "":
 		return Dev, nil
 	default:
