@@ -210,13 +210,14 @@ func (s *subscriber) run() {
 				msgid = gstring.SHA256(msg.Data)
 			}
 			md, _ := msg.Metadata()
+			sharedLogData := fmt.Sprintf("sub: %s, msgId: %s, consumerSeq: %v, streamSeq: %v, attempt: %d", msg.Subject, msgid, md.Sequence.Consumer, md.Sequence.Stream, md.NumDelivered)
 			if md.NumDelivered > maxDeliveryAttempts {
-				s.logger.Warn("terminating msg: %v (%s/%v) after %d delivery attempts", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
+				s.logger.Warn("terminating %s", sharedLogData)
 				msg.Term() // no longer allow it to be reprocessed
 				continue
 			}
 			if !s.disableLog {
-				s.logger.Debug("processing message: %v (%s/%v), delivery: %d", msg.Subject, msgid, md.Sequence.Consumer, md.NumDelivered)
+				s.logger.Debug("processing %s", sharedLogData)
 			}
 			encoding := GetContentEncodingFromHeader(msg)
 			gzipped := encoding == "gzip/json"
@@ -234,7 +235,7 @@ func (s *subscriber) run() {
 				}
 			}
 			if err != nil {
-				s.logger.Error("error uncompressing message: %v (%s/%d). %s", msg.Subject, msgid, md.Sequence.Consumer, err)
+				s.logger.Error("error uncompressing %s. err: %s", sharedLogData, err)
 				msg.AckSync()
 				continue
 			}
@@ -261,10 +262,10 @@ func (s *subscriber) run() {
 			// now do cleanup
 			if err != nil && !strings.Contains(err.Error(), "message was already acknowledged") {
 				if errors.Is(err, context.Canceled) {
-					s.logger.Warn("nack message %s: (%v/%d) [canceled]", msg.Subject, msgid, md.Sequence.Consumer)
+					s.logger.Warn("nack %s [canceled]", sharedLogData)
 					msg.Nak()
 				} else {
-					s.logger.Error("error handling message %s: (%s/%d). %s", msg.Subject, msgid, md.Sequence.Consumer, err)
+					s.logger.Error("error handling %s. err: %s", sharedLogData, err)
 					msg.AckSync()
 				}
 			}
