@@ -23,6 +23,8 @@ const (
 func GetLevelFromEnv() LogLevel {
 	s := os.Getenv("SM_LOG_LEVEL")
 	switch strings.ToLower(s) { // Convert the string to lowercase to make it case-insensitive
+	case "none":
+		return LevelNone
 	case "trace":
 		return LevelTrace
 	case "debug":
