@@ -180,11 +180,18 @@ func (s *subscriber) run() {
 				time.Sleep(time.Microsecond * 10)
 				continue
 			}
-			if errors.Is(err, nats.ErrConnectionClosed) || errors.Is(err, nats.ErrDisconnected) {
-				s.logger.Error("restarting to reconnect to nats...👋: %s", err)
-				// lost outer nats connection so restart
-				// otherwise we loop forever trying to reconnect
-				os.Exit(1)
+			fatalNatsErrors := []error{
+				nats.ErrConnectionClosed,
+				nats.ErrDisconnected,
+				nats.ErrFetchDisconnected,
+			}
+			for _, fatalError := range fatalNatsErrors {
+				if errors.Is(err, fatalError) {
+					s.logger.Error("restarting to reconnect to nats...👋: %s", err)
+					// lost outer nats connection so restart
+					// otherwise we loop forever trying to reconnect
+					os.Exit(1)
+				}
 			}
 
 			if errors.Is(err, nats.ErrTimeout) {
