@@ -97,6 +97,16 @@ func (d *Dns) Lookup(ctx context.Context, hostname string) (bool, *net.IP, error
 	if (hostname == "localhost" || hostname == "127.0.0.1") && d.isLocal {
 		return true, &net.IP{127, 0, 0, 1}, nil
 	}
+	if hostname == "host.docker.internal" && d.isLocal {
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", hostname)
+		if err != nil {
+			return false, nil, fmt.Errorf("failed to resolve host.docker.internal: %w", err)
+		}
+		if len(ips) == 0 {
+			return false, nil, fmt.Errorf("no IP addresses found for host.docker.internal")
+		}
+		return true, &ips[0], nil
+	}
 	if isPrivateIP(hostname) && !d.isLocal {
 		return false, nil, ErrInvalidIP
 	}
