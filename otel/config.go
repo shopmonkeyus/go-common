@@ -17,7 +17,6 @@ type Protocol string
 
 const (
 	ProtocolGRPC Protocol = "grpc"
-	ProtocolHTTP Protocol = "http"
 )
 
 type Config struct {
@@ -52,9 +51,6 @@ func DefaultConfig() Config {
 func (c Config) isGRPC() bool {
 	if c.Protocol == ProtocolGRPC {
 		return true
-	}
-	if c.Protocol == ProtocolHTTP {
-		return false
 	}
 	return strings.HasSuffix(strings.TrimSpace(c.Endpoint), "4317")
 }
