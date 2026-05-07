@@ -44,6 +44,16 @@ func (m *muxLogger) Fatal(msg string, args ...interface{}) {
 	m.each(func(l Logger) { l.Fatal(msg, args...) })
 }
 
+func (m *muxLogger) Flush() error {
+	var err error
+	for _, l := range m.loggers {
+		if e := l.Flush(); e != nil {
+			err = e
+		}
+	}
+	return err
+}
+
 func (m *muxLogger) each(f func(Logger)) {
 	for _, l := range m.loggers {
 		f(l)

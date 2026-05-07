@@ -60,6 +60,9 @@ type Logger interface {
 	Error(msg string, args ...interface{})
 	// Fatal level logging and exit with code 1
 	Fatal(msg string, args ...interface{})
+	// Flush flushes any buffered log entries. Call before process exit.
+	// Implementations that don't buffer (console, JSON) return nil.
+	Flush() error
 }
 
 type SinkLogger interface {

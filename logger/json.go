@@ -169,6 +169,8 @@ func (c *jsonLogger) Fatal(msg string, args ...interface{}) {
 	c.Log(LevelError, "ERROR", msg, args...)
 }
 
+func (c *jsonLogger) Flush() error { return nil }
+
 func (c *jsonLogger) SetLogLevel(level LogLevel) {
 	c.logLevel = level
 }

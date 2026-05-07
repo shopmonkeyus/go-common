@@ -195,6 +195,8 @@ func (c *consoleLogger) Fatal(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
+func (c *consoleLogger) Flush() error { return nil }
+
 func (c *consoleLogger) SetLogLevel(level LogLevel) {
 	c.logLevel = level
 }

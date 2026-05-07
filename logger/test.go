@@ -67,6 +67,8 @@ func (c *TestLogger) Fatal(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
+func (c *TestLogger) Flush() error { return nil }
+
 // NewTestLogger returns a new Logger instance useful for testing
 func NewTestLogger() *TestLogger {
 	return &TestLogger{
