@@ -1,6 +1,9 @@
 package logger
 
-import "os"
+import (
+	"context"
+	"os"
+)
 
 type TestLogEntry struct {
 	Severity  string
@@ -65,6 +68,14 @@ func (c *TestLogger) Error(msg string, args ...interface{}) {
 func (c *TestLogger) Fatal(msg string, args ...interface{}) {
 	c.Log("FATAL", msg, args...)
 	os.Exit(1)
+}
+
+func (c *TestLogger) Flush() error {
+	return nil
+}
+
+func (c *TestLogger) WithContext(_ context.Context) Logger {
+	return c
 }
 
 // NewTestLogger returns a new Logger instance useful for testing

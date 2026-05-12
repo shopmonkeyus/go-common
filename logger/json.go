@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -171,6 +172,14 @@ func (c *jsonLogger) Fatal(msg string, args ...interface{}) {
 
 func (c *jsonLogger) SetLogLevel(level LogLevel) {
 	c.logLevel = level
+}
+
+func (c *jsonLogger) Flush() error {
+	return nil
+}
+
+func (c *jsonLogger) WithContext(_ context.Context) Logger {
+	return c
 }
 
 // NewJSONLogger returns a new Logger instance which can be used for structured logging

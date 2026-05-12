@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"io"
 	"os"
 	"regexp"
@@ -48,6 +49,8 @@ type Logger interface {
 	With(metadata map[string]interface{}) Logger
 	// WithPrefix will return a new logger with a prefix prepended to the message
 	WithPrefix(prefix string) Logger
+	// WithContext returns a new logger enriched with context information (e.g., trace IDs)
+	WithContext(ctx context.Context) Logger
 	// Trace level logging
 	Trace(msg string, args ...interface{})
 	// Debug level logging
@@ -60,6 +63,8 @@ type Logger interface {
 	Error(msg string, args ...interface{})
 	// Fatal level logging and exit with code 1
 	Fatal(msg string, args ...interface{})
+	// Flush flushes any buffered log entries
+	Flush() error
 }
 
 type SinkLogger interface {
