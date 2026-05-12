@@ -1,21 +1,36 @@
 package logger
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type contextKey struct{}
 
+var (
+	defaultLogger     Logger
+	defaultLoggerOnce sync.Once
+)
+
+func getDefaultLogger() Logger {
+	defaultLoggerOnce.Do(func() {
+		defaultLogger = NewZapLogger()
+	})
+	return defaultLogger
+}
+
+// ToContext stores a Logger in the context.
 func ToContext(ctx context.Context, l Logger) context.Context {
 	return context.WithValue(ctx, contextKey{}, l)
 }
 
-func FromContext(ctx context.Context) (Logger, bool) {
+// FromContext retrieves a Logger from the context and automatically
+// enriches it with OTEL trace fields (if the logger supports it).
+// Returns a default zap logger if none is stored.
+func FromContext(ctx context.Context) Logger {
 	l, ok := ctx.Value(contextKey{}).(Logger)
-	return l, ok
-}
-
-func FromContextOrDefault(ctx context.Context, fallback Logger) Logger {
-	if l, ok := FromContext(ctx); ok {
-		return l
+	if !ok {
+		l = getDefaultLogger()
 	}
-	return fallback
+	return l.WithContext(ctx)
 }

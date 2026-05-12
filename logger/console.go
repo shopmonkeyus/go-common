@@ -117,6 +117,10 @@ func (c *consoleLogger) SetSink(sink Sink, level LogLevel) {
 	c.sinkLogLevel = level
 }
 
+func (c *consoleLogger) WithFields(args ...interface{}) Logger {
+	return c.With(KV(args...))
+}
+
 func (c *consoleLogger) With(metadata map[string]interface{}) Logger {
 	kv := metadata
 	if c.metadata != nil {

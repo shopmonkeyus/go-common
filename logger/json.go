@@ -67,6 +67,10 @@ func (c *jsonLogger) WithPrefix(prefix string) Logger {
 	return newlogger
 }
 
+func (c *jsonLogger) WithFields(args ...interface{}) Logger {
+	return c.With(KV(args...))
+}
+
 func (c *jsonLogger) With(metadata map[string]interface{}) Logger {
 	traceID := c.traceID
 	component := c.component

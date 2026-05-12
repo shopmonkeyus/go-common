@@ -93,6 +93,16 @@ func (z *zapLogger) Fatal(msg string, args ...interface{}) {
 	z.sugar.Fatalf(msg, args...)
 }
 
+func (z *zapLogger) WithFields(args ...interface{}) Logger {
+	if len(args) == 0 {
+		return z
+	}
+	return &zapLogger{
+		sugar:               z.sugar.With(args...),
+		gcpTraceCorrelation: z.gcpTraceCorrelation,
+	}
+}
+
 func (z *zapLogger) With(metadata map[string]interface{}) Logger {
 	if len(metadata) == 0 {
 		return z

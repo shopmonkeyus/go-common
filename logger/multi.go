@@ -9,6 +9,14 @@ type muxLogger struct {
 	loggers []Logger
 }
 
+func (m *muxLogger) WithFields(args ...interface{}) Logger {
+	var newLoggers []Logger
+	for _, l := range m.loggers {
+		newLoggers = append(newLoggers, l.WithFields(args...))
+	}
+	return NewMultiLogger(newLoggers...)
+}
+
 func (m *muxLogger) With(metadata map[string]interface{}) Logger {
 	var newLoggers []Logger
 	for _, l := range m.loggers {

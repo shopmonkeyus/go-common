@@ -27,6 +27,10 @@ func (c *TestLogger) WithPrefix(prefix string) Logger {
 	return c
 }
 
+func (c *TestLogger) WithFields(args ...interface{}) Logger {
+	return c.With(KV(args...))
+}
+
 func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 	kv := metadata
 	if c.metadata != nil {
