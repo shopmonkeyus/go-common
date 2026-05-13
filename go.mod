@@ -15,6 +15,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
 	github.com/vmihailenco/msgpack/v5 v5.4.1
+	go.opentelemetry.io/otel/trace v1.43.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sync v0.20.0
@@ -59,7 +60,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/net v0.52.0 // indirect

@@ -19,7 +19,6 @@ func getDefaultLogger() Logger {
 	return defaultLogger
 }
 
-// ToContext stores a Logger in the context.
 func ToContext(ctx context.Context, l Logger) context.Context {
 	return context.WithValue(ctx, contextKey{}, l)
 }

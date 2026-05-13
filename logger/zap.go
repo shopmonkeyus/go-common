@@ -58,7 +58,7 @@ func WithGCPTraceCorrelation() ZapOption {
 
 func NewZapLogger(opts ...ZapOption) Logger {
 	cfg := applyZapOptions(opts)
-	level := resolveLevel(cfg)
+	level := getLogLevel(cfg)
 	if level == LevelNone {
 		return nopZapLogger(cfg)
 	}
@@ -164,12 +164,11 @@ func applyZapOptions(opts []ZapOption) *zapConfig {
 	return cfg
 }
 
-func resolveLevel(cfg *zapConfig) LogLevel {
-	level := GetLevelFromEnv()
+func getLogLevel(cfg *zapConfig) LogLevel {
 	if cfg.levelSet {
-		level = cfg.level
+		return cfg.level
 	}
-	return level
+	return GetLevelFromEnv()
 }
 
 func mapLogLevelToZap(level LogLevel) zapcore.Level {
@@ -210,15 +209,15 @@ func nopZapLogger(cfg *zapConfig) *zapLogger {
 
 func newZapLoggerWithWriter(w io.Writer, opts ...ZapOption) *zapLogger {
 	cfg := applyZapOptions(opts)
-	level := resolveLevel(cfg)
-	if level == LevelNone {
+	logLevel := getLogLevel(cfg)
+	if logLevel == LevelNone {
 		return nopZapLogger(cfg)
 	}
 	encCfg := zap.NewProductionEncoderConfig()
 	encCfg.EncodeLevel = levelEncoder
 	ws := zapcore.AddSync(w)
 	encoder := zapcore.NewJSONEncoder(encCfg)
-	core := zapcore.NewCore(encoder, ws, mapLogLevelToZap(level))
+	core := zapcore.NewCore(encoder, ws, mapLogLevelToZap(logLevel))
 	base := zap.New(core, zap.WithFatalHook(zapcore.WriteThenNoop))
 	return buildZapLogger(base, cfg)
 }
