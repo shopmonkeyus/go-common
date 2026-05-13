@@ -23,9 +23,6 @@ func ToContext(ctx context.Context, l Logger) context.Context {
 	return context.WithValue(ctx, contextKey{}, l)
 }
 
-// FromContext retrieves a Logger from the context and automatically
-// enriches it with OTEL trace fields (if the logger supports it).
-// Returns a default zap logger if none is stored.
 func FromContext(ctx context.Context) Logger {
 	l, ok := ctx.Value(contextKey{}).(Logger)
 	if !ok {
