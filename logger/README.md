@@ -58,6 +58,19 @@ log := logger.NewZapGCloudLogger()
 log := logger.NewZapLogger(logger.WithGCPTraceCorrelation())
 ```
 
+#### Sampling
+
+Zap enables sampling by default to protect against log flooding. Sampling is per-second, per-message (same level + message text):
+
+- **Initial: 100** — the first 100 entries are always logged
+- **Thereafter: 100** — after the initial 100, every 100th entry is logged; the rest are dropped
+
+This means a single log line must fire >100 times per second before any entries are dropped. To disable sampling:
+
+```go
+log := logger.NewZapLogger(logger.WithSampling(nil))
+```
+
 ### Console Logger
 
 Colorized terminal output for local development. Supports sinks for writing logs to an additional `io.Writer`.
