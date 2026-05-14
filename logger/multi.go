@@ -1,7 +1,20 @@
 package logger
 
+import (
+	"context"
+	"errors"
+)
+
 type muxLogger struct {
 	loggers []Logger
+}
+
+func (m *muxLogger) WithFields(args ...interface{}) Logger {
+	var newLoggers []Logger
+	for _, l := range m.loggers {
+		newLoggers = append(newLoggers, l.WithFields(args...))
+	}
+	return NewMultiLogger(newLoggers...)
 }
 
 func (m *muxLogger) With(metadata map[string]interface{}) Logger {
@@ -42,6 +55,24 @@ func (m *muxLogger) Error(msg string, args ...interface{}) {
 
 func (m *muxLogger) Fatal(msg string, args ...interface{}) {
 	m.each(func(l Logger) { l.Fatal(msg, args...) })
+}
+
+func (m *muxLogger) Flush() error {
+	var errs []error
+	for _, l := range m.loggers {
+		if err := l.Flush(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (m *muxLogger) WithContext(ctx context.Context) Logger {
+	var newLoggers []Logger
+	for _, l := range m.loggers {
+		newLoggers = append(newLoggers, l.WithContext(ctx))
+	}
+	return NewMultiLogger(newLoggers...)
 }
 
 func (m *muxLogger) each(f func(Logger)) {

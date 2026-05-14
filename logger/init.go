@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"io"
 	"os"
 	"regexp"
@@ -16,13 +17,15 @@ const (
 	LevelInfo
 	LevelWarn
 	LevelError
+	LevelPanic
+	LevelFatal
 	LevelNone
 )
 
-// GetLevelFrom env will look at the environment var `SM_LOG_LEVEL` and convert it into the appropriate LogLevel
-func GetLevelFromEnv() LogLevel {
-	s := os.Getenv("SM_LOG_LEVEL")
-	switch strings.ToLower(s) { // Convert the string to lowercase to make it case-insensitive
+// ParseLogLevel converts a string to a LogLevel. Case-insensitive.
+// Returns LevelDebug for unrecognized values.
+func ParseLogLevel(s string) LogLevel {
+	switch strings.ToLower(s) {
 	case "none":
 		return LevelNone
 	case "trace":
@@ -35,9 +38,18 @@ func GetLevelFromEnv() LogLevel {
 		return LevelWarn
 	case "error":
 		return LevelError
+	case "panic":
+		return LevelPanic
+	case "fatal":
+		return LevelFatal
 	default:
-		return LevelDebug // Return an unknown or default value for invalid strings
+		return LevelDebug
 	}
+}
+
+// GetLevelFromEnv reads the SM_LOG_LEVEL environment variable and converts it to a LogLevel.
+func GetLevelFromEnv() LogLevel {
+	return ParseLogLevel(os.Getenv("SM_LOG_LEVEL"))
 }
 
 type Sink io.Writer
@@ -46,8 +58,12 @@ type Sink io.Writer
 type Logger interface {
 	// With will return a new logger using metadata as the base context
 	With(metadata map[string]interface{}) Logger
+	// WithFields will return a new logger with the given key-value pairs as context
+	WithFields(args ...interface{}) Logger
 	// WithPrefix will return a new logger with a prefix prepended to the message
 	WithPrefix(prefix string) Logger
+	// WithContext returns a new logger enriched with context information (e.g., trace IDs)
+	WithContext(ctx context.Context) Logger
 	// Trace level logging
 	Trace(msg string, args ...interface{})
 	// Debug level logging
@@ -60,6 +76,8 @@ type Logger interface {
 	Error(msg string, args ...interface{})
 	// Fatal level logging and exit with code 1
 	Fatal(msg string, args ...interface{})
+	// Flush flushes any buffered log entries
+	Flush() error
 }
 
 type SinkLogger interface {
