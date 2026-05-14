@@ -17,6 +17,8 @@ const (
 	LevelInfo
 	LevelWarn
 	LevelError
+	LevelPanic
+	LevelFatal
 	LevelNone
 )
 
@@ -36,6 +38,10 @@ func ParseLogLevel(s string) LogLevel {
 		return LevelWarn
 	case "error":
 		return LevelError
+	case "panic":
+		return LevelPanic
+	case "fatal":
+		return LevelFatal
 	default:
 		return LevelDebug
 	}

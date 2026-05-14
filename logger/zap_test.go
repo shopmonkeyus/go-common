@@ -23,7 +23,7 @@ type zapLogEntry struct {
 
 func newTestZapLogger(level LogLevel) (*zapLogger, *bytes.Buffer) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf, WithLevel(level))
+	logger := NewZapTestLogger(&buf, WithLevel(level))
 	return logger, &buf
 }
 
@@ -147,7 +147,7 @@ func TestZapLoggerWithEnvLevel(t *testing.T) {
 	for _, tt := range tests {
 		os.Setenv("SM_LOG_LEVEL", tt.envLevel)
 		var buf bytes.Buffer
-		logger := newZapLoggerWithWriter(&buf)
+		logger := NewZapTestLogger(&buf)
 		logger.Trace("trace msg")
 		logger.Debug("debug msg")
 		logger.Info("info msg")
@@ -263,7 +263,7 @@ func TestZapLoggerTrace(t *testing.T) {
 
 func TestZapLoggerLevelNone(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf, WithLevel(LevelNone))
+	logger := NewZapTestLogger(&buf, WithLevel(LevelNone))
 	logger.Trace("trace")
 	logger.Debug("debug")
 	logger.Info("info")
@@ -315,7 +315,7 @@ func TestZapLoggerWithContextEmpty(t *testing.T) {
 
 func TestZapLoggerWithContextNoCorrelation(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf, WithLevel(LevelInfo))
+	logger := NewZapTestLogger(&buf, WithLevel(LevelInfo), WithGCPTraceCorrelation(false))
 
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
@@ -330,7 +330,7 @@ func TestZapLoggerWithContextNoCorrelation(t *testing.T) {
 
 func TestZapLoggerWithContextOTEL(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf, WithLevel(LevelInfo), WithGCPTraceCorrelation())
+	logger := NewZapTestLogger(&buf, WithLevel(LevelInfo), WithGCPTraceCorrelation(true))
 
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
@@ -362,7 +362,7 @@ func TestZapLoggerWithLevel(t *testing.T) {
 
 func TestZapLoggerWithFields(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf, WithLevel(LevelInfo), WithFields(map[string]interface{}{
+	logger := NewZapTestLogger(&buf, WithLevel(LevelInfo), WithFields(map[string]interface{}{
 		"service": "test-svc",
 		"version": "1.0",
 	}))
@@ -376,16 +376,16 @@ func TestZapLoggerWithFields(t *testing.T) {
 
 func TestZapLoggerWithGCPTraceCorrelation(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf, WithLevel(LevelInfo), WithGCPTraceCorrelation())
+	logger := NewZapTestLogger(&buf, WithLevel(LevelInfo), WithGCPTraceCorrelation(true))
 	assert.True(t, logger.gcpTraceCorrelation, "option should set gcpTraceCorrelation flag")
 }
 
 func TestZapLoggerCombinedOptions(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newZapLoggerWithWriter(&buf,
+	logger := NewZapTestLogger(&buf,
 		WithLevel(LevelDebug),
 		WithFields(map[string]interface{}{"env": "test"}),
-		WithGCPTraceCorrelation(),
+		WithGCPTraceCorrelation(true),
 	)
 
 	assert.True(t, logger.gcpTraceCorrelation)
@@ -409,8 +409,8 @@ func TestMuxLoggerFlush(t *testing.T) {
 
 func TestMuxLoggerWithContext(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
-	l1 := newZapLoggerWithWriter(&buf1, WithLevel(LevelInfo), WithGCPTraceCorrelation())
-	l2 := newZapLoggerWithWriter(&buf2, WithLevel(LevelInfo), WithGCPTraceCorrelation())
+	l1 := NewZapTestLogger(&buf1, WithLevel(LevelInfo), WithGCPTraceCorrelation(true))
+	l2 := NewZapTestLogger(&buf2, WithLevel(LevelInfo), WithGCPTraceCorrelation(true))
 	mux := NewMultiLogger(l1, l2)
 
 	sc := trace.NewSpanContext(trace.SpanContextConfig{

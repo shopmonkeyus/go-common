@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -19,6 +20,8 @@ var zapLevels = map[LogLevel]zapcore.Level{
 	LevelInfo:  zapcore.InfoLevel,
 	LevelWarn:  zapcore.WarnLevel,
 	LevelError: zapcore.ErrorLevel,
+	LevelPanic: zapcore.PanicLevel,
+	LevelFatal: zapcore.FatalLevel,
 }
 
 type ZapOption func(*zapConfig)
@@ -50,9 +53,9 @@ func WithFields(fields map[string]interface{}) ZapOption {
 	}
 }
 
-func WithGCPTraceCorrelation() ZapOption {
+func WithGCPTraceCorrelation(enabled bool) ZapOption {
 	return func(c *zapConfig) {
-		c.gcpTraceCorrelation = true
+		c.gcpTraceCorrelation = enabled
 	}
 }
 
@@ -157,7 +160,7 @@ func (z *zapLogger) Flush() error {
 }
 
 func applyZapOptions(opts []ZapOption) *zapConfig {
-	cfg := &zapConfig{}
+	cfg := &zapConfig{gcpTraceCorrelation: true}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -168,14 +171,17 @@ func getLogLevel(cfg *zapConfig) LogLevel {
 	if cfg.levelSet {
 		return cfg.level
 	}
-	return GetLevelFromEnv()
+	if _, ok := os.LookupEnv("SM_LOG_LEVEL"); ok {
+		return GetLevelFromEnv()
+	}
+	return LevelInfo
 }
 
 func mapLogLevelToZap(level LogLevel) zapcore.Level {
 	if zl, ok := zapLevels[level]; ok {
 		return zl
 	}
-	return zapcore.DebugLevel
+	return zapcore.InfoLevel
 }
 
 func levelEncoder(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
@@ -207,7 +213,7 @@ func nopZapLogger(cfg *zapConfig) *zapLogger {
 	}
 }
 
-func newZapLoggerWithWriter(w io.Writer, opts ...ZapOption) *zapLogger {
+func NewZapTestLogger(w io.Writer, opts ...ZapOption) *zapLogger {
 	cfg := applyZapOptions(opts)
 	logLevel := getLogLevel(cfg)
 	if logLevel == LevelNone {
