@@ -24,9 +24,11 @@ type Logger interface {
 
 ## Log Levels
 
-Six levels, controlled via the `SM_LOG_LEVEL` environment variable (case-insensitive, defaults to `debug`):
+Eight levels, controlled via the `SM_LOG_LEVEL` environment variable (case-insensitive, defaults to `debug`):
 
-`trace` | `debug` | `info` | `warn` | `error` | `none`
+`trace` | `debug` | `info` | `warn` | `error` | `panic` | `fatal` | `none`
+
+> **Note:** The zap logger defaults to `info` when `SM_LOG_LEVEL` is not set (see [Zap Logger](#zap-logger-recommended) below). Other implementations default to `debug`.
 
 ```go
 level := logger.ParseLogLevel("info")
@@ -40,11 +42,11 @@ level := logger.GetLevelFromEnv() // reads SM_LOG_LEVEL
 High-performance structured logger built on [uber-go/zap](https://github.com/uber-go/zap). Produces JSON output suitable for production and Cloud Logging.
 
 ```go
-// Default — reads SM_LOG_LEVEL from env
+// Default — Info level, GCP trace correlation enabled
 log := logger.NewZapLogger()
 
 // With explicit level
-log := logger.NewZapLogger(logger.WithLevel(logger.LevelInfo))
+log := logger.NewZapLogger(logger.WithLevel(logger.LevelDebug))
 
 // With initial fields
 log := logger.NewZapLogger(logger.WithFields(map[string]interface{}{
@@ -52,11 +54,33 @@ log := logger.NewZapLogger(logger.WithFields(map[string]interface{}{
     "version": "1.2.0",
 }))
 
-// GCP Cloud Logging with trace correlation
-log := logger.NewZapGCloudLogger()
-// or manually:
-log := logger.NewZapLogger(logger.WithGCPTraceCorrelation())
+// Disable GCP trace correlation
+log := logger.NewZapLogger(logger.WithGCPTraceCorrelation(false))
 ```
+
+#### Default Log Level
+
+The zap logger defaults to **Info** when no level is specified and `SM_LOG_LEVEL` is not set. This differs from other implementations which default to Debug. The priority is:
+
+1. `WithLevel(...)` option — highest priority
+2. `SM_LOG_LEVEL` environment variable
+3. **Info** — fallback default
+
+#### GCP Trace Correlation
+
+GCP trace correlation is **enabled by default**. When enabled, `WithContext(ctx)` and `FromContext(ctx)` automatically enrich log entries with OpenTelemetry trace/span IDs as GCP-compatible fields:
+
+- `logging.googleapis.com/trace`
+- `logging.googleapis.com/spanId`
+- `logging.googleapis.com/trace_sampled`
+
+This allows Cloud Logging to correlate log entries with distributed traces. To disable:
+
+```go
+log := logger.NewZapLogger(logger.WithGCPTraceCorrelation(false))
+```
+
+`NewZapGCloudLogger()` is an alias for `NewZapLogger()` — both behave identically.
 
 #### Sampling
 
@@ -133,17 +157,18 @@ log = log.WithPrefix("auth")
 
 ## Context Integration
 
-Store and retrieve loggers from `context.Context`. `FromContext` automatically enriches logs with OpenTelemetry trace/span IDs when GCP trace correlation is enabled.
+Store and retrieve loggers from `context.Context`. `FromContext` automatically enriches logs with OpenTelemetry trace/span IDs (since GCP trace correlation is enabled by default).
 
 ```go
 // Store logger in context
 ctx = logger.ToContext(ctx, log)
 
 // Retrieve (returns default zap logger if none stored)
+// Automatically adds trace/span IDs from context
 log := logger.FromContext(ctx)
 
-// Manual trace enrichment
-log = log.WithContext(ctx) // adds trace_id, span_id, trace_sampled for GCP
+// Manual trace enrichment (same as what FromContext does)
+log = log.WithContext(ctx)
 ```
 
 ## Flushing
