@@ -4,16 +4,26 @@ import (
 	"encoding/json"
 )
 
+type OperationType string
+
+const (
+	OperationInsert OperationType = "INSERT"
+	OperationUpdate OperationType = "UPDATE"
+	OperationDelete OperationType = "DELETE"
+)
+
 // Event represents a change record from the database.
 type Event struct {
-	Operation     string          `json:"operation"`
+	Operation     OperationType   `json:"operation"`
 	ID            string          `json:"id"`
 	Table         string          `json:"table"`
 	Key           []string        `json:"key"`
-	Version       int64           `json:"version"`
+	Version       *int64          `json:"version,omitempty"`
 	ModelVersion  string          `json:"modelVersion"`
+	Region        string          `json:"region"`
 	CompanyID     *string         `json:"companyId,omitempty"`
 	LocationID    *string         `json:"locationId,omitempty"`
+	SessionID     *string         `json:"sessionId,omitempty"`
 	UserID        *string         `json:"userId,omitempty"`
 	Before        json.RawMessage `json:"before,omitempty"`
 	After         json.RawMessage `json:"after,omitempty"`
@@ -25,7 +35,7 @@ type Event struct {
 }
 
 func (c *Event) String() string {
-	return "Event[op=" + c.Operation + ",table=" + c.Table + ",id=" + c.ID + ",pk=" + c.GetPrimaryKey() + "]"
+	return "Event[op=" + string(c.Operation) + ",table=" + c.Table + ",id=" + c.ID + ",pk=" + c.GetPrimaryKey() + "]"
 }
 
 func (c *Event) GetPrimaryKey() string {
@@ -65,7 +75,7 @@ func (c *Event) GetObject() (map[string]any, error) {
 }
 
 func (c *Event) Get(res any) error {
-	if c.Operation == "DELETE" {
+	if c.Operation == OperationDelete {
 		if err := json.Unmarshal(c.Before, &res); err != nil {
 			return err
 		}
