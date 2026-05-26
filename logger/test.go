@@ -1,6 +1,9 @@
 package logger
 
-import "os"
+import (
+	"context"
+	"os"
+)
 
 type TestLogEntry struct {
 	Severity  string
@@ -22,6 +25,10 @@ func (c *TestLogger) WithSink(sink Sink, level LogLevel) Logger {
 // WithPrefix will return a new logger with a prefix prepended to the message
 func (c *TestLogger) WithPrefix(prefix string) Logger {
 	return c
+}
+
+func (c *TestLogger) WithFields(args ...interface{}) Logger {
+	return c.With(KV(args...))
 }
 
 func (c *TestLogger) With(metadata map[string]interface{}) Logger {
@@ -65,6 +72,14 @@ func (c *TestLogger) Error(msg string, args ...interface{}) {
 func (c *TestLogger) Fatal(msg string, args ...interface{}) {
 	c.Log("FATAL", msg, args...)
 	os.Exit(1)
+}
+
+func (c *TestLogger) Flush() error {
+	return nil
+}
+
+func (c *TestLogger) WithContext(_ context.Context) Logger {
+	return c
 }
 
 // NewTestLogger returns a new Logger instance useful for testing

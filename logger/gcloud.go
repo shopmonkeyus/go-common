@@ -9,3 +9,9 @@ func NewGCloudLogger() Logger {
 func NewGCloudLoggerWithSink(sink Sink, level LogLevel) Logger {
 	return NewJSONLoggerWithSink(sink, level)
 }
+
+// NewZapGCloudLogger returns a new zap-based Logger for structured Google Cloud logging
+// with GCP trace correlation enabled by default.
+func NewZapGCloudLogger(opts ...ZapOption) Logger {
+	return NewZapLogger(opts...)
+}
