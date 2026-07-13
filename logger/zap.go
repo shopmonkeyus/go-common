@@ -64,8 +64,6 @@ func WithGCPTraceCorrelation(enabled bool) ZapOption {
 	}
 }
 
-// AddCallerSkip skips n extra stack frames when reporting the caller, additive
-// on top of the built-in skip. Use it when this logger is wrapped by your own layer.
 func AddCallerSkip(n int) ZapOption {
 	return func(c *zapConfig) {
 		c.callerSkip += n
