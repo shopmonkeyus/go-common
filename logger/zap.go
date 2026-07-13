@@ -14,8 +14,6 @@ import (
 
 const zapTraceLevel = zapcore.DebugLevel - 1
 
-// defaultCallerSkip skips the go-common wrapper frame so the reported caller is
-// the application call site, not logger/zap.go.
 const defaultCallerSkip = 1
 
 var zapLevels = map[LogLevel]zapcore.Level{
