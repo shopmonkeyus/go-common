@@ -19,6 +19,7 @@ type zapLogEntry struct {
 	Level   string  `json:"level"`
 	Message string  `json:"msg"`
 	Logger  string  `json:"logger"`
+	Caller  string  `json:"caller"`
 }
 
 func newTestZapLogger(level LogLevel) (*zapLogger, *bytes.Buffer) {
@@ -283,6 +284,43 @@ func TestZapLoggerFieldNames(t *testing.T) {
 	assert.Contains(t, raw, "ts")
 	assert.Contains(t, raw, "level")
 	assert.Contains(t, raw, "msg")
+}
+
+func TestZapLoggerCallerPointsAtCallSite(t *testing.T) {
+	logger, buf := newTestZapLogger(LevelInfo)
+	logger.Info("caller check")
+	_ = logger.sugar.Sync()
+
+	entries := parseZapLines(t, buf)
+	require.Len(t, entries, 1)
+	assert.Contains(t, entries[0].Caller, "zap_test.go", "caller should point at the real call site")
+	assert.NotContains(t, entries[0].Caller, "zap.go:", "caller should not point at the go-common wrapper")
+}
+
+func TestZapLoggerAddCallerSkip(t *testing.T) {
+	// Wrapper layer: an extra skip should make the caller jump past logAt.
+	logAt := func(l Logger, msg string) {
+		l.Info(msg)
+	}
+
+	var bufDefault bytes.Buffer
+	def := NewZapTestLogger(&bufDefault, WithLevel(LevelInfo))
+	logAt(def, "default")
+	_ = def.sugar.Sync()
+
+	var bufSkip bytes.Buffer
+	skip := NewZapTestLogger(&bufSkip, WithLevel(LevelInfo), AddCallerSkip(1))
+	logAt(skip, "skipped")
+	_ = skip.sugar.Sync()
+
+	defEntries := parseZapLines(t, &bufDefault)
+	skipEntries := parseZapLines(t, &bufSkip)
+	require.Len(t, defEntries, 1)
+	require.Len(t, skipEntries, 1)
+
+	assert.NotEqual(t, defEntries[0].Caller, skipEntries[0].Caller,
+		"AddCallerSkip should shift the reported caller frame")
+	assert.Contains(t, skipEntries[0].Caller, "zap_test.go")
 }
 
 func TestZapLoggerWarnLevel(t *testing.T) {

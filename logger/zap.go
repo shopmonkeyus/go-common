@@ -14,6 +14,10 @@ import (
 
 const zapTraceLevel = zapcore.DebugLevel - 1
 
+// defaultCallerSkip skips the go-common wrapper frame so the reported caller is
+// the application call site, not logger/zap.go.
+const defaultCallerSkip = 1
+
 var zapLevels = map[LogLevel]zapcore.Level{
 	LevelTrace: zapTraceLevel,
 	LevelDebug: zapcore.DebugLevel,
@@ -31,6 +35,7 @@ type zapConfig struct {
 	levelSet            bool
 	fields              map[string]interface{}
 	gcpTraceCorrelation bool
+	callerSkip          int
 }
 
 type zapLogger struct {
@@ -56,6 +61,14 @@ func WithFields(fields map[string]interface{}) ZapOption {
 func WithGCPTraceCorrelation(enabled bool) ZapOption {
 	return func(c *zapConfig) {
 		c.gcpTraceCorrelation = enabled
+	}
+}
+
+// AddCallerSkip skips n extra stack frames when reporting the caller, additive
+// on top of the built-in skip. Use it when this logger is wrapped by your own layer.
+func AddCallerSkip(n int) ZapOption {
+	return func(c *zapConfig) {
+		c.callerSkip += n
 	}
 }
 
@@ -193,6 +206,7 @@ func levelEncoder(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
 }
 
 func buildZapLogger(base *zap.Logger, cfg *zapConfig) *zapLogger {
+	base = base.WithOptions(zap.AddCaller(), zap.AddCallerSkip(defaultCallerSkip+cfg.callerSkip))
 	if len(cfg.fields) > 0 {
 		fields := make([]zap.Field, 0, len(cfg.fields))
 		for k, v := range cfg.fields {
