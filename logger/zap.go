@@ -14,6 +14,8 @@ import (
 
 const zapTraceLevel = zapcore.DebugLevel - 1
 
+const defaultCallerSkip = 1
+
 var zapLevels = map[LogLevel]zapcore.Level{
 	LevelTrace: zapTraceLevel,
 	LevelDebug: zapcore.DebugLevel,
@@ -31,6 +33,7 @@ type zapConfig struct {
 	levelSet            bool
 	fields              map[string]interface{}
 	gcpTraceCorrelation bool
+	callerSkip          int
 }
 
 type zapLogger struct {
@@ -56,6 +59,12 @@ func WithFields(fields map[string]interface{}) ZapOption {
 func WithGCPTraceCorrelation(enabled bool) ZapOption {
 	return func(c *zapConfig) {
 		c.gcpTraceCorrelation = enabled
+	}
+}
+
+func AddCallerSkip(n int) ZapOption {
+	return func(c *zapConfig) {
+		c.callerSkip += n
 	}
 }
 
@@ -193,6 +202,7 @@ func levelEncoder(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
 }
 
 func buildZapLogger(base *zap.Logger, cfg *zapConfig) *zapLogger {
+	base = base.WithOptions(zap.AddCaller(), zap.AddCallerSkip(defaultCallerSkip+cfg.callerSkip))
 	if len(cfg.fields) > 0 {
 		fields := make([]zap.Field, 0, len(cfg.fields))
 		for k, v := range cfg.fields {
