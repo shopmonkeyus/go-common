@@ -233,7 +233,10 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	server := RunTestServer(true)
 	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	queue := fmt.Sprintf("queuel%v", time.Now().Unix())
+	// nanosecond resolution: the jetstream store dir persists across test
+	// server restarts, so a second-resolution name would collide with a
+	// recovered stream from a previous run and its msgid dedupe state
+	queue := fmt.Sprintf("queuel%v", time.Now().UnixNano())
 	subject := queue + ".>"
 	message := queue + ".test"
 	n, err := NewNats(log, "test", server.ClientURL(), nil)
@@ -247,40 +250,49 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 		Subjects: []string{subject},
 	})
 	assert.NoError(t, err, "failed to create stream")
-	var rcv1, rcv2 receivedMsg
-	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := GetMsgIdFromHeader(msg)
-		t.Log("1 received:", string(buf), "msgid:", _msgid)
-		rcv1.set(string(buf), _msgid)
-		msg.AckSync()
-		return nil
+	// the two consumers share one durable, so each message is delivered to
+	// exactly one of them. which consumer gets which message depends on whose
+	// pull request reaches the server first, so assert on the union instead of
+	// a fixed pairing
+	var lock sync.Mutex
+	received := make(map[string]string) // msgid -> payload
+	var deliveries int
+	handler := func(who string) Handler {
+		return func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+			if err := msg.AckSync(); err != nil {
+				return err
+			}
+			_msgid := GetMsgIdFromHeader(msg)
+			t.Log(who, "received:", string(buf), "msgid:", _msgid)
+			lock.Lock()
+			received[_msgid] = string(buf)
+			deliveries++
+			lock.Unlock()
+			return nil
+		}
 	}
-	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		_msgid := GetMsgIdFromHeader(msg)
-		t.Log("2 received:", string(buf), "msgid:", _msgid)
-		rcv2.set(string(buf), _msgid)
-		msg.AckSync()
-		return nil
-	}
-	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler1, WithQueueReplicas(1))
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler("1"), WithQueueReplicas(1))
 	assert.NoError(t, err, "failed to create consumer 1")
 	assert.NotNil(t, sub1, "sub1 result was nil")
-	sub2, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler2, WithQueueReplicas(1))
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler("2"), WithQueueReplicas(1))
 	assert.NoError(t, err, "failed to create consumer 2")
-	assert.NotNil(t, sub1, "sub2 result was nil")
-	_msgid1 := fmt.Sprintf("a-%v", time.Now().Unix())
-	_msgid2 := fmt.Sprintf("b-%v", time.Now().Unix())
+	assert.NotNil(t, sub2, "sub2 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().UnixNano())
+	_msgid2 := fmt.Sprintf("b-%v", time.Now().UnixNano())
 	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
 	assert.NoError(t, err, "failed to publish")
 	_, err = js.Publish(message, []byte(_msgid2), nats.MsgId(_msgid2))
 	assert.NoError(t, err, "failed to publish")
-	time.Sleep(time.Millisecond * 100)
-	received1, msgid1 := rcv1.get()
-	received2, msgid2 := rcv2.get()
-	assert.Equal(t, _msgid1, received1, "message1 didnt match")
-	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
-	assert.Equal(t, _msgid2, received2, "message2 didnt match")
-	assert.Equal(t, _msgid2, msgid2, "msgid2 didnt match")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return len(received) == 2
+	}, 10*time.Second, 50*time.Millisecond, "both messages not received")
+	lock.Lock()
+	assert.Equal(t, _msgid1, received[_msgid1], "message1 didnt match")
+	assert.Equal(t, _msgid2, received[_msgid2], "message2 didnt match")
+	assert.Equal(t, 2, deliveries, "each message should be delivered exactly once")
+	lock.Unlock()
 	sub1.Close()
 	sub2.Close()
 	n.Close()
@@ -304,10 +316,15 @@ func TestQueueConsumerResubscribesWhenConsumerBreaks(t *testing.T) {
 	var lock sync.Mutex
 	received := make(map[string]bool)
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		// ack before recording so the test can't delete the consumer while the
+		// ack is still in flight
+		if err := msg.AckSync(); err != nil {
+			return err
+		}
 		lock.Lock()
 		received[string(buf)] = true
 		lock.Unlock()
-		return msg.AckSync()
+		return nil
 	}
 	got := func(key string) func() bool {
 		return func() bool {

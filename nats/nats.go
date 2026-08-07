@@ -18,9 +18,16 @@ import (
 
 const (
 	maxDeliveryAttempts = 10
-	fetchMaxWait        = time.Minute
-	resubscribeDelay    = time.Second
+	// fetchMaxWait bounds how long a fetch waits for messages. It also bounds
+	// how long the subscriber can go without noticing that its consumer was
+	// deleted, since pull requests sent after the deletion are never answered
+	fetchMaxWait     = 10 * time.Second
+	resubscribeDelay = time.Second
 )
+
+// errSubscriberClosed is returned by subscription() when the subscriber was
+// closed while a new subscription was being created
+var errSubscriberClosed = errors.New("subscriber closed")
 
 type Handler func(ctx context.Context, payload []byte, msg *nats.Msg) error
 
@@ -130,8 +137,11 @@ func (s *subscriber) unsubscribe() {
 // subscription returns the current subscription, creating a new one if needed
 func (s *subscriber) subscription() (*nats.Subscription, error) {
 	s.lock.Lock()
-	sub := s.sub
+	sub, shutdown := s.sub, s.shutdown
 	s.lock.Unlock()
+	if shutdown {
+		return nil, errSubscriberClosed
+	}
 	if sub != nil {
 		return sub, nil
 	}
@@ -141,8 +151,14 @@ func (s *subscriber) subscription() (*nats.Subscription, error) {
 		return nil, err
 	}
 	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.shutdown {
+		// Close() ran its unsubscribe while we were creating this subscription,
+		// so drop it here instead of leaving Close blocked on a dangling fetch
+		sub.Unsubscribe()
+		return nil, errSubscriberClosed
+	}
 	s.sub = sub
-	s.lock.Unlock()
 	return sub, nil
 }
 
@@ -163,6 +179,9 @@ func (s *subscriber) run() {
 	for !s.isShutdown() {
 		sub, err := s.subscription()
 		if err != nil {
+			if errors.Is(err, errSubscriberClosed) {
+				return
+			}
 			// timeouts and connection errors are expected while nats is
 			// reconnecting so don't log them
 			if !errors.Is(err, nats.ErrTimeout) && !errors.Is(err, nats.ErrConnectionClosed) {
@@ -177,7 +196,17 @@ func (s *subscriber) run() {
 			case s.isShutdown() || errors.Is(err, context.Canceled):
 				return
 			case errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded):
-				// no messages arrived before the fetch wait expired
+				// no messages arrived before the fetch wait expired. the server
+				// only notifies fetches that were pending when the consumer was
+				// deleted, so verify the consumer is still alive before fetching
+				// again or we would keep fetching from a dead consumer forever
+				if _, cerr := sub.ConsumerInfo(); cerr != nil {
+					if !errors.Is(cerr, nats.ErrTimeout) && !errors.Is(cerr, nats.ErrConnectionClosed) {
+						s.logger.Error("consumer is unavailable (%s), recreating the subscription", cerr)
+					}
+					s.unsubscribe()
+					s.sleep(resubscribeDelay)
+				}
 			default:
 				s.logger.Error("fetch failed (%s), recreating the subscription", err)
 				s.unsubscribe()
@@ -305,6 +334,28 @@ func (s *subscriber) extendInflight() {
 
 func isConsumerNameAlreadyExistsError(err error) bool {
 	return strings.Contains(err.Error(), "consumer name already in use")
+}
+
+// ensureConsumer creates the stream's durable consumer if it doesn't exist and
+// updates it if its configuration doesn't match the expected one. Consumers
+// must be created here rather than implicitly by PullSubscribe: the nats
+// client deletes durable consumers it created itself on Unsubscribe, which
+// would tear down a consumer shared with other subscribers.
+func ensureConsumer(log logger.Logger, js nats.JetStreamContext, stream string, cconfig *nats.ConsumerConfig) error {
+	ci, _ := js.ConsumerInfo(stream, cconfig.Durable)
+	if ci == nil {
+		if _, err := js.AddConsumer(stream, cconfig); err != nil && !isConsumerNameAlreadyExistsError(err) {
+			return err
+		}
+		return nil
+	}
+	if msg, ok := diffConfig(ci.Config, *cconfig); !ok {
+		log.Warn("consumer %s for stream %s has a configuration mismatch (%s) and must be updated", cconfig.Durable, stream, msg)
+		if _, err := js.UpdateConsumer(stream, cconfig); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) (string, bool) {

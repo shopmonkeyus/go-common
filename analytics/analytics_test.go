@@ -39,12 +39,17 @@ func TestAnalyticsBasic(t *testing.T) {
 	})
 	var event Event
 	var msg *nats.Msg
+	received := make(chan struct{})
 	handler := func(ctx context.Context, payload []byte, _msg *nats.Msg) error {
 		if err := json.Unmarshal(payload, &event); err != nil {
 			return err
 		}
 		msg = _msg
-		return msg.AckSync()
+		if err := _msg.AckSync(); err != nil {
+			return err
+		}
+		close(received)
+		return nil
 	}
 	sub, err := gnats.NewEphemeralConsumer(log, js, "analytics", "analytics.>", handler)
 	assert.NoError(t, err)
@@ -53,7 +58,11 @@ func TestAnalyticsBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, analytics.Queue("test", "companyId", "locationId", nil))
 	analytics.Close()
-	time.Sleep(time.Millisecond * 100)
+	select {
+	case <-received:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for analytics event")
+	}
 	assert.Equal(t, "dev", event.Region)
 	assert.Equal(t, "dev", event.Branch)
 	assert.Equal(t, "test", event.Name)
@@ -92,12 +101,17 @@ func TestAnalyticsWithOverride(t *testing.T) {
 	})
 	var event Event
 	var msg *nats.Msg
+	received := make(chan struct{})
 	handler := func(ctx context.Context, payload []byte, _msg *nats.Msg) error {
 		if err := json.Unmarshal(payload, &event); err != nil {
 			return err
 		}
 		msg = _msg
-		return msg.AckSync()
+		if err := _msg.AckSync(); err != nil {
+			return err
+		}
+		close(received)
+		return nil
 	}
 	sub, err := gnats.NewEphemeralConsumer(log, js, "analytics", "analytics.>", handler)
 	assert.NoError(t, err)
@@ -115,7 +129,11 @@ func TestAnalyticsWithOverride(t *testing.T) {
 		WithMessageId(id),
 	))
 	analytics.Close()
-	time.Sleep(time.Millisecond * 100)
+	select {
+	case <-received:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for analytics event")
+	}
 	assert.Equal(t, "region", event.Region)
 	assert.Equal(t, "branch", event.Branch)
 	assert.Equal(t, "test", event.Name)
@@ -157,12 +175,17 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 	})
 	var event Event
 	var msg *nats.Msg
+	received := make(chan struct{})
 	handler := func(ctx context.Context, payload []byte, _msg *nats.Msg) error {
 		if err := json.Unmarshal(payload, &event); err != nil {
 			return err
 		}
 		msg = _msg
-		return msg.AckSync()
+		if err := _msg.AckSync(); err != nil {
+			return err
+		}
+		close(received)
+		return nil
 	}
 	sub, err := gnats.NewEphemeralConsumer(log, js, "analytics", "analytics.>", handler)
 	assert.NoError(t, err)
@@ -180,7 +203,11 @@ func TestAnalyticsWithNoCompanyOrLocation(t *testing.T) {
 		WithMessageId(id),
 	))
 	analytics.Close()
-	time.Sleep(time.Millisecond * 100)
+	select {
+	case <-received:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for analytics event")
+	}
 	assert.Equal(t, "region", event.Region)
 	assert.Equal(t, "branch", event.Branch)
 	assert.Equal(t, "test", event.Name)

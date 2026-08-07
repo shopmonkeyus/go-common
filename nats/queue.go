@@ -133,7 +133,6 @@ func WithQueueConsumerDescription(description string) QueueOptsFunc {
 }
 
 func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) {
-	ci, _ := config.JetStream.ConsumerInfo(config.StreamName, config.DurableName)
 	cconfig := &nats.ConsumerConfig{
 		Durable:         config.DurableName,
 		Description:     config.ConsumerDescription,
@@ -147,24 +146,19 @@ func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) 
 		MaxRequestBatch: config.MaxRequestBatch,
 		AckWait:         config.AckWait,
 	}
-	if ci != nil {
-		msg, ok := diffConfig(ci.Config, *cconfig)
-		if !ok {
-			config.Logger.Warn("consumer %s for stream %s has a configuration mismatch (%s) and must be updated", config.DurableName, config.StreamName, msg)
-			if _, err := config.JetStream.UpdateConsumer(config.StreamName, cconfig); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if ci == nil {
-		if _, err := config.JetStream.AddConsumer(config.StreamName, cconfig); err != nil && !isConsumerNameAlreadyExistsError(err) {
-			return nil, err
-		}
+	if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
+		return nil, err
 	}
 	eos := newSubscriber(subscriberOpts{
 		ctx:    config.Context,
 		logger: config.Logger.WithPrefix("[queue/" + config.DurableName + "]"),
 		newsub: func() (*nats.Subscription, error) {
+			// recreate the consumer if it went away (e.g. deleted during a
+			// leadership change) so the pull subscription always binds to an
+			// existing consumer instead of creating one it would later delete
+			if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
+				return nil, err
+			}
 			return config.JetStream.PullSubscribe(
 				config.FilterSubject,
 				config.DurableName,

@@ -16,6 +16,7 @@ type TestLogger struct {
 	mu       sync.Mutex
 	metadata map[string]interface{}
 	Logs     []TestLogEntry
+	root     *TestLogger // set on loggers derived via With so all entries land in the root's Logs
 }
 
 var _ Logger = (*TestLogger)(nil)
@@ -44,10 +45,18 @@ func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 			kv[k] = v
 		}
 	}
-	return &TestLogger{metadata: kv, Logs: c.Logs}
+	root := c.root
+	if root == nil {
+		root = c
+	}
+	return &TestLogger{metadata: kv, root: root}
 }
 
 func (c *TestLogger) Log(level string, msg string, args ...interface{}) {
+	if c.root != nil {
+		c.root.Log(level, msg, args...)
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Logs = append(c.Logs, TestLogEntry{level, msg, args})

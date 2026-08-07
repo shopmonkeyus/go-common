@@ -252,7 +252,6 @@ func (t *analytics) Close() error {
 }
 
 func (t *analytics) run() {
-	t.wg.Add(1)
 	defer t.wg.Done()
 	for {
 		select {
@@ -313,6 +312,7 @@ func New(ctx context.Context, logger logger.Logger, js nats.JetStreamContext) (A
 		js:     js,
 		events: make(chan analyticsOpts, 250),
 	}
+	t.wg.Add(1)
 	go t.run() // start background sender
 	return t, nil
 }
