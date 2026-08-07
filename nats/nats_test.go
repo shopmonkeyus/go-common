@@ -16,6 +16,27 @@ import (
 	"github.com/vmihailenco/msgpack"
 )
 
+// receivedMsg records the last message seen by a handler goroutine so tests
+// can read it without a data race
+type receivedMsg struct {
+	lock  sync.Mutex
+	data  string
+	msgid string
+}
+
+func (r *receivedMsg) set(data string, msgid string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.data = data
+	r.msgid = msgid
+}
+
+func (r *receivedMsg) get() (string, string) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	return r.data, r.msgid
+}
+
 func RunTestServer(js bool) *server.Server {
 	opts := natsserver.DefaultTestOptions
 	opts.Port = 8222
@@ -74,13 +95,11 @@ func TestExactlyOnceConsumer(t *testing.T) {
 		Subjects: []string{queue + ".>"},
 	})
 	assert.NoError(t, err, "failed to create stream")
-	var received string
-	var msgid string
+	var rcv receivedMsg
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("received:", string(buf), "msgid:", _msgid)
-		received = string(buf)
-		msgid = _msgid
+		rcv.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
@@ -91,6 +110,7 @@ func TestExactlyOnceConsumer(t *testing.T) {
 	_, err = js.Publish(queue+".test", []byte("hi"), nats.MsgId(_msgid))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Millisecond * 100)
+	received, msgid := rcv.get()
 	assert.Equal(t, "hi", received, "message didnt match")
 	assert.Equal(t, _msgid, msgid, "msgid didnt match")
 	ci, err := js.ConsumerInfo(queue, "test")
@@ -118,13 +138,11 @@ func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
 		Subjects: []string{queue + ".>"},
 	})
 	assert.NoError(t, err, "failed to create stream")
-	var received string
-	var msgid string
+	var rcv receivedMsg
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("received:", string(buf), "msgid:", _msgid)
-		received = string(buf)
-		msgid = _msgid
+		rcv.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
@@ -141,6 +159,7 @@ func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
 	_, err = js.PublishMsg(msg, nats.MsgId(_msgid))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Second)
+	received, msgid := rcv.get()
 	assert.Equal(t, `{"hi":"there"}`, received, "message didnt match")
 	assert.Equal(t, _msgid, msgid, "msgid didnt match")
 	ci, err := js.ConsumerInfo(queue, "test2")
@@ -169,23 +188,18 @@ func TestQueueConsumer(t *testing.T) {
 	})
 	log.Debug("error: %v", err)
 	assert.NoError(t, err, "failed to create stream")
-	var received1 string
-	var msgid1 string
+	var rcv1, rcv2 receivedMsg
 	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("1 received:", string(buf), "msgid:", _msgid)
-		received1 = string(buf)
-		msgid1 = _msgid
+		rcv1.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
-	var received2 string
-	var msgid2 string
 	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("2 received:", string(buf), "msgid:", _msgid)
-		received2 = string(buf)
-		msgid2 = _msgid
+		rcv2.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
@@ -199,6 +213,8 @@ func TestQueueConsumer(t *testing.T) {
 	_, err = js.Publish(queue+".test", []byte("hi"), nats.MsgId(_msgid))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Millisecond * 100)
+	received1, msgid1 := rcv1.get()
+	received2, msgid2 := rcv2.get()
 	assert.Equal(t, "hi", received1, "message didnt match")
 	assert.Equal(t, _msgid, msgid1, "msgid didnt match")
 	assert.Equal(t, "hi", received2, "message didnt match")
@@ -231,23 +247,18 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 		Subjects: []string{subject},
 	})
 	assert.NoError(t, err, "failed to create stream")
-	var received1 string
-	var msgid1 string
+	var rcv1, rcv2 receivedMsg
 	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("1 received:", string(buf), "msgid:", _msgid)
-		received1 = string(buf)
-		msgid1 = _msgid
+		rcv1.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
-	var received2 string
-	var msgid2 string
 	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		t.Log("2 received:", string(buf), "msgid:", _msgid)
-		received2 = string(buf)
-		msgid2 = _msgid
+		rcv2.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
@@ -264,12 +275,62 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	_, err = js.Publish(message, []byte(_msgid2), nats.MsgId(_msgid2))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Millisecond * 100)
+	received1, msgid1 := rcv1.get()
+	received2, msgid2 := rcv2.get()
 	assert.Equal(t, _msgid1, received1, "message1 didnt match")
 	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
 	assert.Equal(t, _msgid2, received2, "message2 didnt match")
 	assert.Equal(t, _msgid2, msgid2, "msgid2 didnt match")
 	sub1.Close()
 	sub2.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestQueueConsumerResubscribesWhenConsumerBreaks(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	stream := fmt.Sprintf("resub%v", time.Now().Unix())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     stream,
+		Subjects: []string{stream + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var lock sync.Mutex
+	received := make(map[string]bool)
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		lock.Lock()
+		received[string(buf)] = true
+		lock.Unlock()
+		return msg.AckSync()
+	}
+	got := func(key string) func() bool {
+		return func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return received[key]
+		}
+	}
+	sub, err := NewQueueConsumer(log, js, stream, "resub", stream+".*", handler, WithQueueReplicas(1), WithQueueDelivery(nats.DeliverAllPolicy))
+	assert.NoError(t, err, "failed to create consumer")
+	_, err = js.Publish(stream+".test", []byte("before"))
+	assert.NoError(t, err, "failed to publish")
+	assert.Eventually(t, got("before"), 10*time.Second, 50*time.Millisecond, "first message not received")
+
+	// deleting the consumer fails the pending fetch with a terminal error (the
+	// same error class as a jetstream leadership change) and the subscriber
+	// must recover by recreating the subscription
+	assert.NoError(t, js.DeleteConsumer(stream, "resub"), "failed to delete consumer")
+	_, err = js.Publish(stream+".test", []byte("after"))
+	assert.NoError(t, err, "failed to publish")
+	assert.Eventually(t, got("after"), 15*time.Second, 50*time.Millisecond, "message after resubscribe not received")
+
+	sub.Close()
 	n.Close()
 	server.Shutdown()
 }
@@ -359,14 +420,12 @@ func TestEphemeralConsumerAutoExtend(t *testing.T) {
 		Subjects: []string{subject},
 	})
 	assert.NoError(t, err, "failed to create stream")
-	var received string
-	var msgid string
+	var rcv receivedMsg
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		_msgid := GetMsgIdFromHeader(msg)
 		log.Info("received: %s, msgid: %s", string(buf), _msgid)
 		time.Sleep(time.Second * 5) // block to force the extender to run
-		received = string(buf)
-		msgid = _msgid
+		rcv.set(string(buf), _msgid)
 		msg.AckSync()
 		return nil
 	}
@@ -377,6 +436,7 @@ func TestEphemeralConsumerAutoExtend(t *testing.T) {
 	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
 	assert.NoError(t, err, "failed to publish")
 	time.Sleep(time.Second * 6)
+	received, msgid := rcv.get()
 	assert.Equal(t, _msgid1, received, "message1 didnt match")
 	assert.Equal(t, _msgid1, msgid, "msgid1 didnt match")
 	sub1.Close()

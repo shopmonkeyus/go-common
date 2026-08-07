@@ -3,6 +3,7 @@ package logger
 import (
 	"context"
 	"os"
+	"sync"
 )
 
 type TestLogEntry struct {
@@ -12,6 +13,7 @@ type TestLogEntry struct {
 }
 
 type TestLogger struct {
+	mu       sync.Mutex
 	metadata map[string]interface{}
 	Logs     []TestLogEntry
 }
@@ -42,10 +44,12 @@ func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 			kv[k] = v
 		}
 	}
-	return &TestLogger{kv, c.Logs}
+	return &TestLogger{metadata: kv, Logs: c.Logs}
 }
 
 func (c *TestLogger) Log(level string, msg string, args ...interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.Logs = append(c.Logs, TestLogEntry{level, msg, args})
 }
 

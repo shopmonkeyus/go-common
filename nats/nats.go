@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +16,11 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-const maxDeliveryAttempts = 10
+const (
+	maxDeliveryAttempts = 10
+	fetchMaxWait        = time.Minute
+	resubscribeDelay    = time.Second
+)
 
 type Handler func(ctx context.Context, payload []byte, msg *nats.Msg) error
 
@@ -27,24 +30,32 @@ type Subscriber interface {
 	Close() error
 }
 
+// inflight tracks the message currently being handled so the extender can
+// keep extending its ack deadline while the handler runs
+type inflight struct {
+	msg     *nats.Msg
+	msgid   string
+	seq     uint64
+	started time.Time
+}
+
 type subscriber struct {
-	logger          logger.Logger
-	newsub          func() (*nats.Subscription, error)
-	sub             *nats.Subscription
-	handler         Handler
-	shutdown        bool
-	lock            sync.Mutex
-	wg              sync.WaitGroup
-	ctx             context.Context
-	cancel          context.CancelFunc
-	inflight        *nats.Msg
-	inflightSeq     uint64
-	inflightMsgid   string
-	inflightStarted *time.Time
-	ackLock         sync.Mutex
-	extendInterval  time.Duration
-	maxfetch        int
-	disableLog      bool
+	logger         logger.Logger
+	newsub         func() (*nats.Subscription, error)
+	handler        Handler
+	ctx            context.Context
+	cancel         context.CancelFunc
+	extendInterval time.Duration
+	maxfetch       int
+	disableLog     bool
+	wg             sync.WaitGroup
+
+	lock     sync.Mutex // guards shutdown and sub
+	shutdown bool
+	sub      *nats.Subscription
+
+	ackLock  sync.Mutex // guards inflight
+	inflight *inflight
 }
 
 type subscriberOpts struct {
@@ -60,30 +71,30 @@ type subscriberOpts struct {
 var _ Subscriber = (*subscriber)(nil)
 
 func newSubscriber(opts subscriberOpts) *subscriber {
-	_ctx, cancel := context.WithCancel(opts.ctx)
-	if opts.extendInterval.Nanoseconds() == 0 {
+	ctx, cancel := context.WithCancel(opts.ctx)
+	if opts.extendInterval <= 0 {
 		opts.extendInterval = time.Second * 28
 	}
 	if opts.maxfetch <= 0 {
 		opts.maxfetch = 1
 	}
-	sub := &subscriber{
+	s := &subscriber{
 		logger:         opts.logger,
 		newsub:         opts.newsub,
 		handler:        opts.handler,
-		ctx:            _ctx,
+		ctx:            ctx,
 		cancel:         cancel,
 		extendInterval: opts.extendInterval,
 		maxfetch:       opts.maxfetch,
 		disableLog:     opts.disableLog,
 	}
-	s, err := opts.newsub()
-	if err == nil {
-		sub.sub = s
+	if sub, err := opts.newsub(); err == nil {
+		s.sub = sub
 	}
-	go sub.extender()
-	go sub.run()
-	return sub
+	s.wg.Add(2)
+	go s.extender()
+	go s.run()
+	return s
 }
 
 // Close will shutdown subscriptions and wait for the subscriber to be shutdown
@@ -92,191 +103,203 @@ func (s *subscriber) Close() error {
 	s.lock.Lock()
 	s.shutdown = true
 	s.lock.Unlock()
-	s.cancel()          // signal a blocking fetch to wake up
-	s.sub.Unsubscribe() // unsubscribe so we don't get more messages
-	s.wg.Wait()         // wait for us to nack all pending messages if any
-	s.sub.Drain()       // close up shop
+	s.cancel()      // stop the extender and cancel the handler context
+	s.unsubscribe() // stop delivery and wake up a blocked fetch
+	s.wg.Wait()     // wait for the run loop to nack pending messages if any
 	s.logger.Debug("subscriber closed")
 	return nil
 }
 
-func (s *subscriber) extender() {
-	s.wg.Add(1)
-	t := time.NewTicker(s.extendInterval)
-	defer func() {
-		t.Stop()
-		s.wg.Done()
-	}()
-	for {
-		select {
-		case <-s.ctx.Done():
-			s.ackLock.Lock()
-			if s.inflight != nil {
-				s.logger.Info("nack message %s (%v/%d) [canceled]", s.inflight.Subject, s.inflightMsgid, s.inflightSeq)
-				s.inflight.Nak()
-				s.inflight = nil
-				s.inflightStarted = nil
-				s.inflightMsgid = ""
-				s.inflightSeq = 0
+func (s *subscriber) isShutdown() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.shutdown
+}
+
+// unsubscribe drops the current subscription (if any) so the run loop will
+// create a fresh one on its next iteration
+func (s *subscriber) unsubscribe() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.sub != nil {
+		s.sub.Unsubscribe()
+		s.sub = nil
+	}
+}
+
+// subscription returns the current subscription, creating a new one if needed
+func (s *subscriber) subscription() (*nats.Subscription, error) {
+	s.lock.Lock()
+	sub := s.sub
+	s.lock.Unlock()
+	if sub != nil {
+		return sub, nil
+	}
+	s.logger.Trace("creating a new subscription")
+	sub, err := s.newsub()
+	if err != nil {
+		return nil, err
+	}
+	s.lock.Lock()
+	s.sub = sub
+	s.lock.Unlock()
+	return sub, nil
+}
+
+// sleep pauses for d or until the subscriber is closed, whichever comes first
+func (s *subscriber) sleep(d time.Duration) {
+	select {
+	case <-s.ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+// run fetches batches of messages and dispatches them to the handler until
+// the subscriber is closed, recreating the subscription whenever it becomes
+// unusable (leadership change, consumer deleted, connection loss, etc)
+func (s *subscriber) run() {
+	defer s.wg.Done()
+	defer s.unsubscribe()
+	for !s.isShutdown() {
+		sub, err := s.subscription()
+		if err != nil {
+			// timeouts and connection errors are expected while nats is
+			// reconnecting so don't log them
+			if !errors.Is(err, nats.ErrTimeout) && !errors.Is(err, nats.ErrConnectionClosed) {
+				s.logger.Error("error creating new subscription: %s", err)
 			}
-			s.ackLock.Unlock()
-			return
-		case <-t.C:
-			s.ackLock.Lock()
-			if s.inflight != nil {
-				if !s.disableLog {
-					s.logger.Debug("extending %s ack timeout (%s/%d) running %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, time.Since(*s.inflightStarted))
-				}
-				if err := s.inflight.InProgress(); err != nil {
-					s.logger.Error("error extending in progress %s (%s/%d): %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, err)
-				}
+			s.sleep(resubscribeDelay)
+			continue
+		}
+		msgs, err := sub.Fetch(s.maxfetch, nats.MaxWait(fetchMaxWait))
+		if err != nil {
+			switch {
+			case s.isShutdown() || errors.Is(err, context.Canceled):
+				return
+			case errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded):
+				// no messages arrived before the fetch wait expired
+			default:
+				s.logger.Error("fetch failed (%s), recreating the subscription", err)
+				s.unsubscribe()
+				s.sleep(resubscribeDelay)
 			}
-			s.ackLock.Unlock()
+			continue
+		}
+		for _, msg := range msgs {
+			s.process(msg)
 		}
 	}
 }
 
-func (s *subscriber) run() {
-	s.wg.Add(1)
+// process delivers a single message to the handler and acks/nacks it based on
+// the handler result
+func (s *subscriber) process(msg *nats.Msg) {
+	// nack any message fetched after a shutdown started so it is redelivered
+	if s.isShutdown() {
+		msg.Nak()
+		return
+	}
+	msgid := GetMsgIdFromHeader(msg)
+	if msgid == "" {
+		msgid = gstring.SHA256(msg.Data)
+	}
+	md, _ := msg.Metadata()
+	logDetail := fmt.Sprintf("sub: %s, msgId: %s, consumerSeq: %v, streamSeq: %v, attempt: %d", msg.Subject, msgid, md.Sequence.Consumer, md.Sequence.Stream, md.NumDelivered)
+	if md.NumDelivered > maxDeliveryAttempts {
+		s.logger.Warn("terminating %s", logDetail)
+		msg.Term() // no longer allow it to be reprocessed
+		return
+	}
+	if !s.disableLog {
+		s.logger.Debug("processing %s", logDetail)
+	}
+	data, err := decodePayload(msg)
+	if err != nil {
+		s.logger.Error("error uncompressing %s. err: %s", logDetail, err)
+		msg.AckSync()
+		return
+	}
+
+	// track the inflight message so the extender keeps its ack deadline alive
+	// while the handler runs
+	s.setInflight(&inflight{msg: msg, msgid: msgid, seq: md.Sequence.Consumer, started: time.Now()})
+	err = s.handler(s.ctx, data, msg)
+	s.setInflight(nil)
+
+	if err == nil || strings.Contains(err.Error(), "message was already acknowledged") {
+		return
+	}
+	if errors.Is(err, context.Canceled) {
+		s.logger.Warn("nack %s [canceled]", logDetail)
+		msg.Nak()
+	} else {
+		s.logger.Error("error handling %s. err: %s", logDetail, err)
+		msg.AckSync()
+	}
+}
+
+// decodePayload returns the message payload as JSON, decoding it based on the
+// content encoding header
+func decodePayload(msg *nats.Msg) ([]byte, error) {
+	switch GetContentEncodingFromHeader(msg) {
+	case "gzip/json":
+		return compress.Gunzip(msg.Data)
+	case "msgpack":
+		var o any
+		if err := msgpack.Unmarshal(msg.Data, &o); err != nil {
+			return nil, err
+		}
+		return json.Marshal(o)
+	default:
+		return msg.Data, nil
+	}
+}
+
+func (s *subscriber) setInflight(m *inflight) {
+	s.ackLock.Lock()
+	s.inflight = m
+	s.ackLock.Unlock()
+}
+
+// extender extends the ack deadline of the inflight message on an interval so
+// that long-running handlers don't get their message redelivered
+func (s *subscriber) extender() {
 	defer s.wg.Done()
+	t := time.NewTicker(s.extendInterval)
+	defer t.Stop()
 	for {
-		s.lock.Lock()
-		shutdown := s.shutdown
-		hassub := s.sub != nil
-		s.lock.Unlock()
-		if shutdown {
+		select {
+		case <-s.ctx.Done():
+			s.nackInflight()
 			return
+		case <-t.C:
+			s.extendInflight()
 		}
-		if !hassub {
-			s.logger.Trace("need to create a new subscription")
-			sub, err := s.newsub()
-			if err != nil {
-				if errors.Is(err, nats.ErrTimeout) || errors.Is(err, nats.ErrConnectionClosed) {
-					time.Sleep(time.Second)
-					continue
-				}
-				s.logger.Error("error creating new subscription: %s", err)
-				time.Sleep(time.Second)
-				continue
-			}
-			s.lock.Lock()
-			s.sub = sub
-			s.lock.Unlock()
-		}
-		msgs, err := s.sub.Fetch(s.maxfetch, nats.MaxWait(time.Minute))
-		if err != nil {
-			s.lock.Lock()
-			shutdown := s.shutdown
-			s.lock.Unlock()
-			if shutdown {
-				return
-			}
-			// check to see if cancelled
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-			// this is normal and we should continue to fetch more messages
-			if errors.Is(err, context.DeadlineExceeded) {
-				time.Sleep(time.Microsecond * 10)
-				continue
-			}
-			fatalNatsErrors := []error{
-				nats.ErrConnectionClosed,
-				nats.ErrDisconnected,
-				nats.ErrFetchDisconnected,
-			}
-			for _, fatalError := range fatalNatsErrors {
-				if errors.Is(err, fatalError) {
-					s.logger.Error("restarting to reconnect to nats...👋: %s", err)
-					// lost outer nats connection so restart
-					// otherwise we loop forever trying to reconnect
-					os.Exit(1)
-				}
-			}
+	}
+}
 
-			if errors.Is(err, nats.ErrTimeout) {
-				time.Sleep(time.Microsecond * 10)
-				continue
-			}
-			s.logger.Error("subscription fetch error: %s", err)
-			time.Sleep(time.Second)
-			continue
-		}
-		for _, msg := range msgs {
-			// check through each message we process to make sure we're not in a shutdown
-			// and if so, nack the message to allow another
-			s.lock.Lock()
-			if s.shutdown {
-				msg.Nak()
-				s.lock.Unlock()
-				continue // keep going so that we nack all the messages
-			}
-			s.lock.Unlock()
-			msgid := GetMsgIdFromHeader(msg)
-			if msgid == "" {
-				msgid = gstring.SHA256(msg.Data)
-			}
-			md, _ := msg.Metadata()
-			sharedLogData := fmt.Sprintf("sub: %s, msgId: %s, consumerSeq: %v, streamSeq: %v, attempt: %d", msg.Subject, msgid, md.Sequence.Consumer, md.Sequence.Stream, md.NumDelivered)
-			if md.NumDelivered > maxDeliveryAttempts {
-				s.logger.Warn("terminating %s", sharedLogData)
-				msg.Term() // no longer allow it to be reprocessed
-				continue
-			}
-			if !s.disableLog {
-				s.logger.Debug("processing %s", sharedLogData)
-			}
-			encoding := GetContentEncodingFromHeader(msg)
-			gzipped := encoding == "gzip/json"
-			msgpacked := encoding == "msgpack"
-			started := time.Now()
-			var err error
-			data := msg.Data
-			if gzipped {
-				data, err = compress.Gunzip(data)
-			} else if msgpacked {
-				var o any
-				err = msgpack.Unmarshal(data, &o)
-				if err == nil {
-					data, err = json.Marshal(o)
-				}
-			}
-			if err != nil {
-				s.logger.Error("error uncompressing %s. err: %s", sharedLogData, err)
-				msg.AckSync()
-				continue
-			}
+func (s *subscriber) nackInflight() {
+	s.ackLock.Lock()
+	defer s.ackLock.Unlock()
+	if m := s.inflight; m != nil {
+		s.logger.Info("nack message %s (%v/%d) [canceled]", m.msg.Subject, m.msgid, m.seq)
+		m.msg.Nak()
+		s.inflight = nil
+	}
+}
 
-			// record our inflight message
-			s.ackLock.Lock()
-			s.inflight = msg
-			s.inflightMsgid = msgid
-			s.inflightSeq = md.Sequence.Consumer
-			s.inflightStarted = &started
-			s.ackLock.Unlock()
-
-			// run our callback handler
-			err = s.handler(s.ctx, data, msg)
-
-			// make sure we untrack the inflight state so that the extender knows we're idle
-			s.ackLock.Lock()
-			s.inflight = nil
-			s.inflightMsgid = ""
-			s.inflightSeq = 0
-			s.inflightStarted = nil
-			s.ackLock.Unlock()
-
-			// now do cleanup
-			if err != nil && !strings.Contains(err.Error(), "message was already acknowledged") {
-				if errors.Is(err, context.Canceled) {
-					s.logger.Warn("nack %s [canceled]", sharedLogData)
-					msg.Nak()
-				} else {
-					s.logger.Error("error handling %s. err: %s", sharedLogData, err)
-					msg.AckSync()
-				}
-			}
-		}
+func (s *subscriber) extendInflight() {
+	s.ackLock.Lock()
+	defer s.ackLock.Unlock()
+	m := s.inflight
+	if m == nil {
+		return
+	}
+	if !s.disableLog {
+		s.logger.Debug("extending %s ack timeout (%s/%d) running %v", m.msg.Subject, m.msgid, m.seq, time.Since(m.started))
+	}
+	if err := m.msg.InProgress(); err != nil {
+		s.logger.Error("error extending in progress %s (%s/%d): %v", m.msg.Subject, m.msgid, m.seq, err)
 	}
 }
 
