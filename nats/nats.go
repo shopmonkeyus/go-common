@@ -332,8 +332,60 @@ func (s *subscriber) extendInflight() {
 	}
 }
 
-func isConsumerNameAlreadyExistsError(err error) bool {
-	return strings.Contains(err.Error(), "consumer name already in use")
+// durablePullOpts describes a subscriber bound to a stream's durable pull
+// consumer
+type durablePullOpts struct {
+	ctx        context.Context
+	logger     logger.Logger
+	js         nats.JetStreamContext
+	stream     string
+	consumer   *nats.ConsumerConfig
+	subOpts    []nats.SubOpt
+	handler    Handler
+	maxfetch   int
+	disableLog bool
+	logPrefix  string
+}
+
+// newDurablePullSubscriber ensures the stream's durable consumer exists and
+// returns a subscriber that pulls from it. The consumer is recreated whenever
+// the subscription is re-established in case it went away (e.g. deleted during
+// a leadership change), so the pull subscription always binds to an existing
+// consumer instead of creating one it would later delete.
+func newDurablePullSubscriber(opts durablePullOpts) (Subscriber, error) {
+	if err := ensureConsumer(opts.logger, opts.js, opts.stream, opts.consumer); err != nil {
+		return nil, err
+	}
+	return newSubscriber(subscriberOpts{
+		ctx:    opts.ctx,
+		logger: opts.logger.WithPrefix(opts.logPrefix),
+		newsub: func() (*nats.Subscription, error) {
+			if err := ensureConsumer(opts.logger, opts.js, opts.stream, opts.consumer); err != nil {
+				return nil, err
+			}
+			return opts.js.PullSubscribe(opts.consumer.FilterSubject, opts.consumer.Durable, opts.subOpts...)
+		},
+		handler:    opts.handler,
+		maxfetch:   opts.maxfetch,
+		disableLog: opts.disableLog,
+	}), nil
+}
+
+// deliverSubOpt returns the subscription option matching policy, or fallback
+// for policies that have no direct SubOpt equivalent
+func deliverSubOpt(policy nats.DeliverPolicy, fallback nats.SubOpt) nats.SubOpt {
+	switch policy {
+	case nats.DeliverAllPolicy:
+		return nats.DeliverAll()
+	case nats.DeliverLastPolicy:
+		return nats.DeliverLast()
+	case nats.DeliverLastPerSubjectPolicy:
+		return nats.DeliverLastPerSubject()
+	case nats.DeliverNewPolicy:
+		return nats.DeliverNew()
+	default:
+		return fallback
+	}
 }
 
 // ensureConsumer creates the stream's durable consumer if it doesn't exist and
@@ -344,7 +396,7 @@ func isConsumerNameAlreadyExistsError(err error) bool {
 func ensureConsumer(log logger.Logger, js nats.JetStreamContext, stream string, cconfig *nats.ConsumerConfig) error {
 	ci, _ := js.ConsumerInfo(stream, cconfig.Durable)
 	if ci == nil {
-		if _, err := js.AddConsumer(stream, cconfig); err != nil && !isConsumerNameAlreadyExistsError(err) {
+		if _, err := js.AddConsumer(stream, cconfig); err != nil && !errors.Is(err, nats.ErrConsumerNameAlreadyInUse) {
 			return err
 		}
 		return nil
@@ -359,38 +411,26 @@ func ensureConsumer(log logger.Logger, js nats.JetStreamContext, stream string, 
 }
 
 func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) (string, bool) {
-	if a.AckPolicy != b.AckPolicy {
-		return fmt.Sprintf("ack policy: %v != %v", a.AckPolicy, b.AckPolicy), false
+	fields := []struct {
+		name string
+		a, b any
+	}{
+		{"ack policy", a.AckPolicy, b.AckPolicy},
+		{"deliver policy", a.DeliverPolicy, b.DeliverPolicy},
+		{"description", a.Description, b.Description},
+		{"durable", a.Durable, b.Durable},
+		{"filter subject", a.FilterSubject, b.FilterSubject},
+		{"max ack pending", a.MaxAckPending, b.MaxAckPending},
+		{"max deliver", a.MaxDeliver, b.MaxDeliver},
+		{"name", a.Name, b.Name},
+		{"replicas", a.Replicas, b.Replicas},
+		{"max_fetch", a.MaxRequestBatch, b.MaxRequestBatch},
+		{"ack_wait", a.AckWait, b.AckWait},
 	}
-	if a.DeliverPolicy != b.DeliverPolicy {
-		return fmt.Sprintf("deliver policy: %v != %v", a.DeliverPolicy, b.DeliverPolicy), false
-	}
-	if a.Description != b.Description {
-		return fmt.Sprintf("description: %v != %v", a.Description, b.Description), false
-	}
-	if a.Durable != b.Durable {
-		return fmt.Sprintf("durable: %v != %v", a.Durable, b.Durable), false
-	}
-	if a.FilterSubject != b.FilterSubject {
-		return fmt.Sprintf("filter subject: %v != %v", a.FilterSubject, b.FilterSubject), false
-	}
-	if a.MaxAckPending != b.MaxAckPending {
-		return fmt.Sprintf("max ack pending: %v != %v", a.MaxAckPending, b.MaxAckPending), false
-	}
-	if a.MaxDeliver != b.MaxDeliver {
-		return fmt.Sprintf("max deliver: %v != %v", a.MaxDeliver, b.MaxDeliver), false
-	}
-	if a.Name != b.Name {
-		return fmt.Sprintf("name: %v != %v", a.Name, b.Name), false
-	}
-	if a.Replicas != b.Replicas {
-		return fmt.Sprintf("replicas: %v != %v", a.Replicas, b.Replicas), false
-	}
-	if a.MaxRequestBatch != b.MaxRequestBatch {
-		return fmt.Sprintf("max_fetch: %v != %v", a.MaxRequestBatch, b.MaxRequestBatch), false
-	}
-	if a.AckWait != b.AckWait {
-		return fmt.Sprintf("ack_wait: %v != %v", a.AckWait, b.AckWait), false
+	for _, f := range fields {
+		if f.a != f.b {
+			return fmt.Sprintf("%s: %v != %v", f.name, f.a, f.b), false
+		}
 	}
 	return "", true
 }

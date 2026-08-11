@@ -203,12 +203,12 @@ func (t *analytics) Queue(name string, companyId string, locationId string, payl
 	config.event = Event{
 		Timestamp: time.Now().UTC(),
 		Name:      name,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"payload": payload,
-			"context": map[string]interface{}{
+			"context": map[string]any{
 				"location": "server",
 				"scope":    config.Scope,
-				"pod": map[string]interface{}{
+				"pod": map[string]any{
 					"name": config.PodName,
 					"id":   config.PodID,
 					"ip":   config.PodIP,
@@ -232,8 +232,7 @@ func (t *analytics) Queue(name string, companyId string, locationId string, payl
 		config.event.RequestId = &config.RequestId
 	}
 	buf, _ := json.Marshal(config.event)
-	msgid := config.MessageId
-	if msgid == "" {
+	if config.MessageId == "" {
 		config.MessageId = cstring.SHA256(buf)
 	}
 	config.buf = buf
@@ -256,49 +255,53 @@ func (t *analytics) run() {
 	for {
 		select {
 		case config := <-t.events:
-			companyId := config.event.CompanyId
-			if companyId == "" {
-				companyId = "NONE"
-			}
-			locationId := config.event.LocationId
-			if locationId == "" {
-				locationId = "NONE"
-			}
-			msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s", companyId, locationId, config.event.Name))
-			gnats.SetMsgIdHeader(msg, config.MessageId)
-			if companyId != "NONE" {
-				gnats.SetCompanyIdHeader(msg, companyId)
-			}
-			if config.UserId != "" {
-				gnats.SetUserIdHeader(msg, config.UserId)
-			}
-			if locationId != "NONE" {
-				gnats.SetLocationIdHeader(msg, locationId)
-			}
-			if config.Region != "" {
-				gnats.SetRegionHeader(msg, config.Region)
-			}
-			msg.Data = config.buf
-			var tries int
-			for tries < 3 {
-				tries++
-				_, err := t.js.PublishMsg(msg)
-				if err != nil {
-					t.logger.Warn("analytics: failed sending %s. %s (attempts=%d)", msg.Subject, err, tries)
-					time.Sleep(time.Millisecond * time.Duration(50*tries))
-					continue
+			t.send(config)
+		case <-t.ctx.Done():
+			// flush anything still queued before exiting
+			for {
+				select {
+				case config := <-t.events:
+					t.send(config)
+				default:
+					return
 				}
-				break
-			}
-		default:
-			// if we get here, we have no events in the queue
-			select {
-			case <-t.ctx.Done():
-				return
-			default:
-				time.Sleep(time.Millisecond * 10) // prevent spin lock
 			}
 		}
+	}
+}
+
+// send publishes a single analytics event, retrying a few times on failure
+func (t *analytics) send(config analyticsOpts) {
+	companyId := config.event.CompanyId
+	if companyId == "" {
+		companyId = "NONE"
+	}
+	locationId := config.event.LocationId
+	if locationId == "" {
+		locationId = "NONE"
+	}
+	msg := nats.NewMsg(fmt.Sprintf("analytics.%s.%s.%s", companyId, locationId, config.event.Name))
+	gnats.SetMsgIdHeader(msg, config.MessageId)
+	if companyId != "NONE" {
+		gnats.SetCompanyIdHeader(msg, companyId)
+	}
+	if config.UserId != "" {
+		gnats.SetUserIdHeader(msg, config.UserId)
+	}
+	if locationId != "NONE" {
+		gnats.SetLocationIdHeader(msg, locationId)
+	}
+	if config.Region != "" {
+		gnats.SetRegionHeader(msg, config.Region)
+	}
+	msg.Data = config.buf
+	for attempt := 1; attempt <= 3; attempt++ {
+		_, err := t.js.PublishMsg(msg)
+		if err == nil {
+			return
+		}
+		t.logger.Warn("analytics: failed sending %s. %s (attempts=%d)", msg.Subject, err, attempt)
+		time.Sleep(time.Millisecond * time.Duration(50*attempt))
 	}
 }
 

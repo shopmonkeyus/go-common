@@ -28,7 +28,7 @@ type ephemeralConsumerConfig struct {
 
 type EphemeralOptsFunc func(config *ephemeralConsumerConfig) error
 
-func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stream string, subject string, handler Handler) ephemeralConsumerConfig {
+func defaultEphemeralConfig(logger logger.Logger, js nats.JetStreamContext, stream, subject string, handler Handler) ephemeralConsumerConfig {
 	return ephemeralConsumerConfig{
 		Context:             context.Background(),
 		Logger:              logger,
@@ -70,19 +70,10 @@ func WithEphemeralMaxAckPending(max int) EphemeralOptsFunc {
 	}
 }
 
-// WithEphemeralDelivery set the internal context
+// WithEphemeralDelivery set the deliver policy
 func WithEphemeralDelivery(policy nats.DeliverPolicy) EphemeralOptsFunc {
 	return func(config *ephemeralConsumerConfig) error {
-		switch policy {
-		case nats.DeliverAllPolicy:
-			config.Deliver = nats.DeliverAll()
-		case nats.DeliverLastPolicy:
-			config.Deliver = nats.DeliverLast()
-		case nats.DeliverLastPerSubjectPolicy:
-			config.Deliver = nats.DeliverLastPerSubject()
-		case nats.DeliverNewPolicy:
-			config.Deliver = nats.DeliverNew()
-		}
+		config.Deliver = deliverSubOpt(policy, config.Deliver)
 		config.DeliverPolicy = policy
 		return nil
 	}
@@ -158,7 +149,7 @@ func newEphemeralConsumerWithConfig(config ephemeralConsumerConfig) (Subscriber,
 }
 
 // NewEphemeralConsumer will create (or reuse) an ephemeral consumer
-func NewEphemeralConsumer(logger logger.Logger, js nats.JetStreamContext, stream string, subject string, handler Handler, opts ...EphemeralOptsFunc) (Subscriber, error) {
+func NewEphemeralConsumer(logger logger.Logger, js nats.JetStreamContext, stream, subject string, handler Handler, opts ...EphemeralOptsFunc) (Subscriber, error) {
 	config := defaultEphemeralConfig(logger, js, stream, subject, handler)
 	for _, fn := range opts {
 		if err := fn(&config); err != nil {
