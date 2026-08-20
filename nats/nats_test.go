@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func (r *receivedMsg) handler(t *testing.T) Handler {
 
 func RunTestServer(js bool) *server.Server {
 	opts := natsserver.DefaultTestOptions
-	opts.Port = 8222
+	opts.Port = -1
 	opts.Cluster.Name = "testing"
 	opts.JetStream = js
 	return natsserver.RunServer(&opts)
@@ -208,6 +209,113 @@ func TestQueueConsumerLoadBalanced(t *testing.T) {
 	assert.Equal(t, msgID1, received[msgID1], "message1 didnt match")
 	assert.Equal(t, msgID2, received[msgID2], "message2 didnt match")
 	lock.Unlock()
+}
+
+func TestNewNatsReconnectsAfterServerRestart(t *testing.T) {
+	log := logger.NewTestLogger()
+	opts := natsserver.DefaultTestOptions
+	opts.Port = -1
+	srv := natsserver.RunServer(&opts)
+	url := srv.ClientURL()
+	port := srv.Addr().(*net.TCPAddr).Port
+
+	nc, err := NewNats(log, "test", url, nil)
+	require.NoError(t, err, "failed to connect to nats")
+	defer nc.Close()
+
+	ch := make(chan *nats.Msg, 8)
+	_, err = nc.ChanSubscribe("reconnect.ping", ch)
+	require.NoError(t, err)
+	require.NoError(t, nc.Flush())
+
+	require.NoError(t, nc.Publish("reconnect.ping", []byte("before")))
+	select {
+	case msg := <-ch:
+		require.Equal(t, "before", string(msg.Data))
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive message before restart")
+	}
+
+	srv.Shutdown()
+	srv.WaitForShutdown()
+
+	opts.Port = port
+	srv = natsserver.RunServer(&opts)
+	t.Cleanup(srv.Shutdown)
+
+	require.Eventually(t, nc.IsConnected, 15*time.Second, 50*time.Millisecond, "did not reconnect")
+
+	require.NoError(t, nc.Publish("reconnect.ping", []byte("after")))
+	select {
+	case msg := <-ch:
+		require.Equal(t, "after", string(msg.Data))
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not receive message after reconnect")
+	}
+}
+
+func TestQueueConsumerSurvivesServerRestart(t *testing.T) {
+	log := logger.NewTestLogger()
+	opts := natsserver.DefaultTestOptions
+	opts.Port = -1
+	opts.JetStream = true
+	opts.StoreDir = t.TempDir()
+	srv := natsserver.RunServer(&opts)
+	url := srv.ClientURL()
+	port := srv.Addr().(*net.TCPAddr).Port
+
+	nc, err := NewNats(log, "test", url, nil)
+	require.NoError(t, err, "failed to connect to nats")
+	t.Cleanup(nc.Close)
+	js, err := nc.JetStream()
+	require.NoError(t, err, "failed to create jetstream")
+
+	stream := fmt.Sprintf("reconn%v", time.Now().UnixNano())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     stream,
+		Subjects: []string{stream + ".>"},
+		Storage:  nats.FileStorage,
+	})
+	require.NoError(t, err, "failed to create stream")
+
+	var lock sync.Mutex
+	received := make(map[string]bool)
+	got := func(key string) func() bool {
+		return func() bool {
+			lock.Lock()
+			defer lock.Unlock()
+			return received[key]
+		}
+	}
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		if err := msg.AckSync(); err != nil {
+			return err
+		}
+		lock.Lock()
+		received[string(buf)] = true
+		lock.Unlock()
+		return nil
+	}
+	sub, err := NewQueueConsumer(log, js, stream, "reconn", stream+".*", handler, WithQueueReplicas(1), WithQueueDelivery(nats.DeliverAllPolicy))
+	require.NoError(t, err, "failed to create consumer")
+	defer sub.Close()
+
+	_, err = js.Publish(stream+".test", []byte("before"))
+	require.NoError(t, err, "failed to publish")
+	assert.Eventually(t, got("before"), 10*time.Second, 50*time.Millisecond, "first message not received")
+
+	srv.Shutdown()
+	srv.WaitForShutdown()
+
+	opts.Port = port
+	srv = natsserver.RunServer(&opts)
+	t.Cleanup(srv.Shutdown)
+
+	require.Eventually(t, nc.IsConnected, 15*time.Second, 50*time.Millisecond, "did not reconnect")
+
+	_, err = js.Publish(stream+".test", []byte("after"))
+	require.NoError(t, err, "failed to publish after restart")
+	assert.Eventually(t, got("after"), 30*time.Second, 100*time.Millisecond, "message after server restart not received")
 }
 
 func TestQueueConsumerResubscribesWhenConsumerBreaks(t *testing.T) {
