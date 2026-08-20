@@ -70,19 +70,10 @@ func WithEphemeralMaxAckPending(max int) EphemeralOptsFunc {
 	}
 }
 
-// WithEphemeralDelivery set the internal context
+// WithEphemeralDelivery set the deliver policy
 func WithEphemeralDelivery(policy nats.DeliverPolicy) EphemeralOptsFunc {
 	return func(config *ephemeralConsumerConfig) error {
-		switch policy {
-		case nats.DeliverAllPolicy:
-			config.Deliver = nats.DeliverAll()
-		case nats.DeliverLastPolicy:
-			config.Deliver = nats.DeliverLast()
-		case nats.DeliverLastPerSubjectPolicy:
-			config.Deliver = nats.DeliverLastPerSubject()
-		case nats.DeliverNewPolicy:
-			config.Deliver = nats.DeliverNew()
-		}
+		config.Deliver = deliverSubOpt(policy, config.Deliver)
 		config.DeliverPolicy = policy
 		return nil
 	}

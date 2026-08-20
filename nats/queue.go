@@ -98,19 +98,10 @@ func WithQueueAckWait(max time.Duration) QueueOptsFunc {
 	}
 }
 
-// WithQueueDelivery set the internal context
+// WithQueueDelivery set the deliver policy
 func WithQueueDelivery(policy nats.DeliverPolicy) QueueOptsFunc {
 	return func(config *queueConsumerConfig) error {
-		switch policy {
-		case nats.DeliverAllPolicy:
-			config.Deliver = nats.DeliverAll()
-		case nats.DeliverLastPolicy:
-			config.Deliver = nats.DeliverLast()
-		case nats.DeliverLastPerSubjectPolicy:
-			config.Deliver = nats.DeliverLastPerSubject()
-		case nats.DeliverNewPolicy:
-			config.Deliver = nats.DeliverNew()
-		}
+		config.Deliver = deliverSubOpt(policy, config.Deliver)
 		config.DeliverPolicy = policy
 		return nil
 	}
@@ -133,45 +124,37 @@ func WithQueueConsumerDescription(description string) QueueOptsFunc {
 }
 
 func newQueueConsumerWithConfig(config queueConsumerConfig) (Subscriber, error) {
-	cconfig := &nats.ConsumerConfig{
-		Durable:         config.DurableName,
-		Description:     config.ConsumerDescription,
-		FilterSubject:   config.FilterSubject,
-		AckPolicy:       nats.AckExplicitPolicy,
-		MaxAckPending:   config.MaxAckPending,
-		DeliverPolicy:   config.DeliverPolicy,
-		MaxDeliver:      config.MaxDeliver,
-		Replicas:        config.Replicas,
-		Name:            config.DurableName,
-		MaxRequestBatch: config.MaxRequestBatch,
-		AckWait:         config.AckWait,
-	}
-	if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
-		return nil, err
-	}
-	eos := newSubscriber(subscriberOpts{
+	return newDurablePullSubscriber(durablePullOpts{
 		ctx:    config.Context,
-		logger: config.Logger.WithPrefix("[queue/" + config.DurableName + "]"),
-		newsub: func() (*nats.Subscription, error) {
-			if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
-				return nil, err
-			}
-			return config.JetStream.PullSubscribe(
-				config.FilterSubject,
-				config.DurableName,
-				nats.MaxAckPending(config.MaxAckPending),
-				nats.ManualAck(),
-				nats.AckExplicit(),
-				nats.Description(config.ConsumerDescription),
-				config.Deliver,
-				nats.MaxRequestBatch(config.MaxRequestBatch),
-			)
+		logger: config.Logger,
+		js:     config.JetStream,
+		stream: config.StreamName,
+		consumer: &nats.ConsumerConfig{
+			Durable:         config.DurableName,
+			Description:     config.ConsumerDescription,
+			FilterSubject:   config.FilterSubject,
+			AckPolicy:       nats.AckExplicitPolicy,
+			MaxAckPending:   config.MaxAckPending,
+			DeliverPolicy:   config.DeliverPolicy,
+			MaxDeliver:      config.MaxDeliver,
+			Replicas:        config.Replicas,
+			Name:            config.DurableName,
+			MaxRequestBatch: config.MaxRequestBatch,
+			AckWait:         config.AckWait,
+		},
+		subOpts: []nats.SubOpt{
+			nats.MaxAckPending(config.MaxAckPending),
+			nats.ManualAck(),
+			nats.AckExplicit(),
+			nats.Description(config.ConsumerDescription),
+			config.Deliver,
+			nats.MaxRequestBatch(config.MaxRequestBatch),
 		},
 		handler:    config.Handler,
 		maxfetch:   config.MaxRequestBatch,
 		disableLog: config.DisableSubLogging,
+		logPrefix:  "[queue/" + config.DurableName + "]",
 	})
-	return eos, nil
 }
 
 // NewQueueConsumer will create (or reuse) a queue consumer with default config

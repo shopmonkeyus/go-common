@@ -73,19 +73,10 @@ func WithExactlyOnceReplicas(replicas int) ExactlyOnceOptsFunc {
 	}
 }
 
-// WithExactlyOnceDelivery set the internal context
+// WithExactlyOnceDelivery set the deliver policy
 func WithExactlyOnceDelivery(policy nats.DeliverPolicy) ExactlyOnceOptsFunc {
 	return func(config *exactlyOnceConsumerConfig) error {
-		switch policy {
-		case nats.DeliverAllPolicy:
-			config.Deliver = nats.DeliverAll()
-		case nats.DeliverLastPolicy:
-			config.Deliver = nats.DeliverLast()
-		case nats.DeliverLastPerSubjectPolicy:
-			config.Deliver = nats.DeliverLastPerSubject()
-		case nats.DeliverNewPolicy:
-			config.Deliver = nats.DeliverNew()
-		}
+		config.Deliver = deliverSubOpt(policy, config.Deliver)
 		config.DeliverPolicy = policy
 		return nil
 	}
@@ -149,33 +140,26 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 	if !config.OptStartTime.IsZero() {
 		cconfig.OptStartTime = &config.OptStartTime
 	}
-	if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
-		return nil, err
-	}
-	eos := newSubscriber(subscriberOpts{
-		ctx:    config.Context,
-		logger: config.Logger.WithPrefix("[exactlyonce/" + config.DurableName + "]"),
-		newsub: func() (*nats.Subscription, error) {
-			if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
-				return nil, err
-			}
-			return config.JetStream.PullSubscribe(
-				config.FilterSubject,
-				config.DurableName,
-				nats.MaxAckPending(1),
-				nats.ManualAck(),
-				nats.AckExplicit(),
-				nats.Description(config.ConsumerDescription),
-				config.Deliver,
-				nats.AckWait(config.AckWait),
-				nats.MaxRequestBatch(config.MaxRequestBatch),
-			)
+	return newDurablePullSubscriber(durablePullOpts{
+		ctx:      config.Context,
+		logger:   config.Logger,
+		js:       config.JetStream,
+		stream:   config.StreamName,
+		consumer: cconfig,
+		subOpts: []nats.SubOpt{
+			nats.MaxAckPending(1),
+			nats.ManualAck(),
+			nats.AckExplicit(),
+			nats.Description(config.ConsumerDescription),
+			config.Deliver,
+			nats.AckWait(config.AckWait),
+			nats.MaxRequestBatch(config.MaxRequestBatch),
 		},
 		handler:    config.Handler,
 		maxfetch:   1,
 		disableLog: config.DisableSubLogging,
+		logPrefix:  "[exactlyonce/" + config.DurableName + "]",
 	})
-	return eos, nil
 }
 
 // NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer

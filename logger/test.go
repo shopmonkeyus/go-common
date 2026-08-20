@@ -88,7 +88,7 @@ func (c *TestLogger) Info(msg string, args ...interface{}) {
 }
 
 func (c *TestLogger) Warn(msg string, args ...interface{}) {
-	c.Log("WARN", msg, args...)
+	c.Log("WARNING", msg, args...)
 }
 
 func (c *TestLogger) Error(msg string, args ...interface{}) {
@@ -100,7 +100,7 @@ func (c *TestLogger) Fatal(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func (c *TestLogger) WithContext(ctx context.Context) Logger {
+func (c *TestLogger) WithContext(_ context.Context) Logger {
 	return c
 }
 

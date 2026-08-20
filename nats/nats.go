@@ -192,6 +192,15 @@ func (s *subscriber) run() {
 				return
 			}
 			if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+				// idle fetch. pull requests sent after a consumer is deleted
+				// are not answered, so check whether it is still there.
+				// only drop the subscription if the consumer is actually gone;
+				// timeouts and disconnects during reconnect must not churn it.
+				if _, cerr := sub.ConsumerInfo(); isConsumerGone(cerr) {
+					s.logger.Error("consumer is unavailable (%s), recreating the subscription", cerr)
+					s.dropSub()
+					s.sleep(resubscribeDelay)
+				}
 				continue
 			}
 
@@ -199,13 +208,7 @@ func (s *subscriber) run() {
 				s.logger.Error("subscription fetch error: %s", err)
 			}
 
-			s.lock.Lock()
-			if s.sub != nil {
-				s.sub.Unsubscribe()
-				s.sub = nil
-			}
-			s.lock.Unlock()
-
+			s.dropSub()
 			s.sleep(resubscribeDelay)
 			continue
 		}
@@ -287,11 +290,74 @@ func (s *subscriber) process(msg *nats.Msg) {
 	}
 }
 
+func (s *subscriber) dropSub() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.sub != nil {
+		s.sub.Unsubscribe()
+		s.sub = nil
+	}
+}
+
+func isConsumerGone(err error) bool {
+	return errors.Is(err, nats.ErrConsumerNotFound) || errors.Is(err, nats.ErrConsumerDeleted)
+}
+
 func isConsumerNameAlreadyExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
 	return errors.Is(err, nats.ErrConsumerNameAlreadyInUse) || strings.Contains(err.Error(), "consumer name already in use")
+}
+
+type durablePullOpts struct {
+	ctx        context.Context
+	logger     logger.Logger
+	js         nats.JetStreamContext
+	stream     string
+	consumer   *nats.ConsumerConfig
+	subOpts    []nats.SubOpt
+	handler    Handler
+	maxfetch   int
+	disableLog bool
+	logPrefix  string
+}
+
+// newDurablePullSubscriber creates the durable if needed and returns a
+// subscriber that re-creates it on resubscribe, so Unsubscribe cannot delete a
+// consumer shared with other subscribers.
+func newDurablePullSubscriber(opts durablePullOpts) (Subscriber, error) {
+	if err := ensureConsumer(opts.logger, opts.js, opts.stream, opts.consumer); err != nil {
+		return nil, err
+	}
+	return newSubscriber(subscriberOpts{
+		ctx:    opts.ctx,
+		logger: opts.logger.WithPrefix(opts.logPrefix),
+		newsub: func() (*nats.Subscription, error) {
+			if err := ensureConsumer(opts.logger, opts.js, opts.stream, opts.consumer); err != nil {
+				return nil, err
+			}
+			return opts.js.PullSubscribe(opts.consumer.FilterSubject, opts.consumer.Durable, opts.subOpts...)
+		},
+		handler:    opts.handler,
+		maxfetch:   opts.maxfetch,
+		disableLog: opts.disableLog,
+	}), nil
+}
+
+func deliverSubOpt(policy nats.DeliverPolicy, fallback nats.SubOpt) nats.SubOpt {
+	switch policy {
+	case nats.DeliverAllPolicy:
+		return nats.DeliverAll()
+	case nats.DeliverLastPolicy:
+		return nats.DeliverLast()
+	case nats.DeliverLastPerSubjectPolicy:
+		return nats.DeliverLastPerSubject()
+	case nats.DeliverNewPolicy:
+		return nats.DeliverNew()
+	default:
+		return fallback
+	}
 }
 
 func ensureConsumer(log logger.Logger, js nats.JetStreamContext, stream string, cconfig *nats.ConsumerConfig) error {
