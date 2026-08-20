@@ -19,7 +19,7 @@ type exactlyOnceConsumerConfig struct {
 	FilterSubject       string
 	Handler             Handler
 	DeliverPolicy       nats.DeliverPolicy
-	OptStartTime        time.Time
+	OptStartTime        time.Time `json:"start_time,omitempty"`
 	Deliver             nats.SubOpt
 	MaxDeliver          int
 	Replicas            int
@@ -30,7 +30,7 @@ type exactlyOnceConsumerConfig struct {
 
 type ExactlyOnceOptsFunc func(config *exactlyOnceConsumerConfig) error
 
-func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, stream, durable, subject string, handler Handler) exactlyOnceConsumerConfig {
+func defaultExactlyOnceConfig(logger logger.Logger, js nats.JetStreamContext, stream string, durable string, subject string, handler Handler) exactlyOnceConsumerConfig {
 	return exactlyOnceConsumerConfig{
 		Context:             context.Background(),
 		Logger:              logger,
@@ -73,10 +73,19 @@ func WithExactlyOnceReplicas(replicas int) ExactlyOnceOptsFunc {
 	}
 }
 
-// WithExactlyOnceDelivery set the deliver policy
+// WithExactlyOnceDelivery set the internal context
 func WithExactlyOnceDelivery(policy nats.DeliverPolicy) ExactlyOnceOptsFunc {
 	return func(config *exactlyOnceConsumerConfig) error {
-		config.Deliver = deliverSubOpt(policy, config.Deliver)
+		switch policy {
+		case nats.DeliverAllPolicy:
+			config.Deliver = nats.DeliverAll()
+		case nats.DeliverLastPolicy:
+			config.Deliver = nats.DeliverLast()
+		case nats.DeliverLastPerSubjectPolicy:
+			config.Deliver = nats.DeliverLastPerSubject()
+		case nats.DeliverNewPolicy:
+			config.Deliver = nats.DeliverNew()
+		}
 		config.DeliverPolicy = policy
 		return nil
 	}
@@ -124,7 +133,6 @@ func WithExactlyOnceMaxRequestBatch(max int) ExactlyOnceOptsFunc {
 }
 
 func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscriber, error) {
-	//NOTE: Potentially add option to ignore looking for config mismatch since consumerInfo can be expensive
 	cconfig := &nats.ConsumerConfig{
 		Durable:         config.DurableName,
 		Name:            config.DurableName,
@@ -141,30 +149,37 @@ func newExactlyOnceConsumerWithConfig(config exactlyOnceConsumerConfig) (Subscri
 	if !config.OptStartTime.IsZero() {
 		cconfig.OptStartTime = &config.OptStartTime
 	}
-	return newDurablePullSubscriber(durablePullOpts{
-		ctx:      config.Context,
-		logger:   config.Logger,
-		js:       config.JetStream,
-		stream:   config.StreamName,
-		consumer: cconfig,
-		subOpts: []nats.SubOpt{
-			nats.MaxAckPending(1),
-			nats.ManualAck(),
-			nats.AckExplicit(),
-			nats.Description(config.ConsumerDescription),
-			config.Deliver,
-			nats.AckWait(config.AckWait),
-			nats.MaxRequestBatch(config.MaxRequestBatch),
+	if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
+		return nil, err
+	}
+	eos := newSubscriber(subscriberOpts{
+		ctx:    config.Context,
+		logger: config.Logger.WithPrefix("[exactlyonce/" + config.DurableName + "]"),
+		newsub: func() (*nats.Subscription, error) {
+			if err := ensureConsumer(config.Logger, config.JetStream, config.StreamName, cconfig); err != nil {
+				return nil, err
+			}
+			return config.JetStream.PullSubscribe(
+				config.FilterSubject,
+				config.DurableName,
+				nats.MaxAckPending(1),
+				nats.ManualAck(),
+				nats.AckExplicit(),
+				nats.Description(config.ConsumerDescription),
+				config.Deliver,
+				nats.AckWait(config.AckWait),
+				nats.MaxRequestBatch(config.MaxRequestBatch),
+			)
 		},
 		handler:    config.Handler,
 		maxfetch:   1,
 		disableLog: config.DisableSubLogging,
-		logPrefix:  "[exactlyonce/" + config.DurableName + "]",
 	})
+	return eos, nil
 }
 
 // NewExactlyOnceConsumer will create (or reuse) an exactly once durable consumer
-func NewExactlyOnceConsumer(logger logger.Logger, js nats.JetStreamContext, stream, durable, subject string, handler Handler, opts ...ExactlyOnceOptsFunc) (Subscriber, error) {
+func NewExactlyOnceConsumer(logger logger.Logger, js nats.JetStreamContext, stream string, durable string, subject string, handler Handler, opts ...ExactlyOnceOptsFunc) (Subscriber, error) {
 	config := defaultExactlyOnceConfig(logger, js, stream, durable, subject, handler)
 	for _, fn := range opts {
 		if err := fn(&config); err != nil {

@@ -13,46 +13,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/shopmonkeyus/go-common/logger"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack"
 )
-
-// receivedMsg records the last message seen by a handler goroutine so tests
-// can read it without a data race
-type receivedMsg struct {
-	lock  sync.Mutex
-	data  string
-	msgid string
-}
-
-func (r *receivedMsg) set(data, msgid string) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	r.data = data
-	r.msgid = msgid
-}
-
-func (r *receivedMsg) get() (string, string) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	return r.data, r.msgid
-}
-
-// received reports whether a message has been recorded yet
-func (r *receivedMsg) received() bool {
-	data, _ := r.get()
-	return data != ""
-}
-
-// handler returns a Handler that records the message and acks it
-func (r *receivedMsg) handler(t *testing.T) Handler {
-	return func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		msgid := GetMsgIdFromHeader(msg)
-		t.Log("received:", string(buf), "msgid:", msgid)
-		r.set(string(buf), msgid)
-		return msg.AckSync()
-	}
-}
 
 func RunTestServer(js bool) *server.Server {
 	opts := natsserver.DefaultTestOptions
@@ -62,180 +24,316 @@ func RunTestServer(js bool) *server.Server {
 	return natsserver.RunServer(&opts)
 }
 
-// jetStreamTest starts a jetstream test server, connects to it and creates a
-// stream whose name starts with prefix, tearing everything down when the test
-// ends. Nanosecond resolution matters for the stream name: the jetstream
-// store dir persists across test server restarts, so a second-resolution name
-// could collide with a recovered stream from a previous run and its msgid
-// dedupe state
-func jetStreamTest(t *testing.T, log logger.Logger, prefix string) (nats.JetStreamContext, string) {
-	t.Helper()
-	srv := RunTestServer(true)
-	t.Cleanup(srv.Shutdown)
-	n, err := NewNats(log, "test", srv.ClientURL(), nil)
-	require.NoError(t, err, "failed to connect to nats")
-	t.Cleanup(n.Close)
-	js, err := n.JetStream()
-	require.NoError(t, err, "failed to create jetstream")
-	stream := fmt.Sprintf("%s%v", prefix, time.Now().UnixNano())
-	_, err = js.AddStream(&nats.StreamConfig{
-		Name:     stream,
-		Subjects: []string{stream + ".>"},
-	})
-	require.NoError(t, err, "failed to create stream")
-	return js, stream
-}
-
-func testNewNats(t *testing.T, extraHosts string, opts ...nats.Option) {
-	t.Helper()
-	srv := RunTestServer(false)
-	defer srv.Shutdown()
+func TestNats(t *testing.T) {
+	server := RunTestServer(false)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	n, err := NewNats(log, "test", srv.ClientURL()+extraHosts, nil, opts...)
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
 	assert.NoError(t, err, "failed to connect to nats")
 	assert.NotNil(t, n, "result was nil")
 	n.Close()
-	srv.Shutdown()
+	server.Shutdown()
 	assert.Len(t, log.Logs, 1, "invalid number of log entries")
 	assert.Equal(t, "DEBUG", log.Logs[0].Severity)
 	assert.Equal(t, "NATS ping rtt: %v, host: %s (%s)", log.Logs[0].Message)
 	assert.Len(t, log.Logs[0].Arguments, 3)
-	assert.Equal(t, srv.ClientURL(), log.Logs[0].Arguments[1])
+	assert.Equal(t, server.ClientURL(), log.Logs[0].Arguments[1])
 	assert.Len(t, log.Logs[0].Arguments[2], 56, "invalid nats id")
 }
 
-func TestNats(t *testing.T) {
-	testNewNats(t, "")
-}
-
 func TestNatsWithOpts(t *testing.T) {
-	testNewNats(t, ",nats://localhost:9822,nats://localhost:9100", nats.DontRandomize())
+	server := RunTestServer(false)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", server.ClientURL()+",nats://localhost:9822,nats://localhost:9100", nil, nats.DontRandomize())
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	n.Close()
+	server.Shutdown()
+	assert.Len(t, log.Logs, 1, "invalid number of log entries")
+	assert.Equal(t, "DEBUG", log.Logs[0].Severity)
+	assert.Equal(t, "NATS ping rtt: %v, host: %s (%s)", log.Logs[0].Message)
+	assert.Len(t, log.Logs[0].Arguments, 3)
+	assert.Equal(t, server.ClientURL(), log.Logs[0].Arguments[1])
+	assert.Len(t, log.Logs[0].Arguments[2], 56, "invalid nats id")
 }
 
 func TestExactlyOnceConsumer(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "stream")
-	var rcv receivedMsg
-	sub, err := NewExactlyOnceConsumer(log, js, stream, "test", stream+".*", rcv.handler(t), WithExactlyOnceReplicas(1))
-	require.NoError(t, err, "failed to create consumer")
-	defer sub.Close()
-	msgID := fmt.Sprintf("%v", time.Now().Unix())
-	_, err = js.Publish(stream+".test", []byte("hi"), nats.MsgId(msgID))
-	assert.NoError(t, err, "failed to publish")
-	assert.Eventually(t, rcv.received, 10*time.Second, 50*time.Millisecond, "message not received")
-	data, msgid := rcv.get()
-	assert.Equal(t, "hi", data, "message didnt match")
-	assert.Equal(t, msgID, msgid, "msgid didnt match")
-	ci, err := js.ConsumerInfo(stream, "test")
-	require.NoError(t, err)
-	assert.Equal(t, "exactly once consumer for "+stream, ci.Config.Description)
-}
-
-func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
-	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "streammsg")
-	var rcv receivedMsg
-	sub, err := NewExactlyOnceConsumer(log, js, stream, "test2", stream+".*", rcv.handler(t), WithExactlyOnceReplicas(1))
-	require.NoError(t, err, "failed to create consumer")
-	defer sub.Close()
-	var buf bytes.Buffer
-	require.NoError(t, msgpack.NewEncoder(&buf).Encode(map[string]any{"hi": "there"}))
-	msg := nats.NewMsg(stream + ".test")
-	msg.Data = buf.Bytes()
-	SetContentEncodingHeader(msg, "msgpack")
-	msgID := fmt.Sprintf("%v", time.Now().Unix())
-	_, err = js.PublishMsg(msg, nats.MsgId(msgID))
-	assert.NoError(t, err, "failed to publish")
-	assert.Eventually(t, rcv.received, 10*time.Second, 50*time.Millisecond, "message not received")
-	data, msgid := rcv.get()
-	assert.Equal(t, `{"hi":"there"}`, data, "message didnt match")
-	assert.Equal(t, msgID, msgid, "msgid didnt match")
-	ci, err := js.ConsumerInfo(stream, "test2")
-	require.NoError(t, err)
-	assert.Equal(t, "exactly once consumer for "+stream, ci.Config.Description)
-}
-
-func TestQueueConsumer(t *testing.T) {
-	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "qc")
-	var rcv1, rcv2 receivedMsg
-	sub1, err := NewQueueConsumer(log, js, stream, "qtest1", stream+".*", rcv1.handler(t), WithQueueReplicas(1))
-	require.NoError(t, err, "failed to create consumer 1")
-	defer sub1.Close()
-	sub2, err := NewQueueConsumer(log, js, stream, "qtest2", stream+".*", rcv2.handler(t), WithQueueReplicas(1))
-	require.NoError(t, err, "failed to create consumer 2")
-	defer sub2.Close()
-	msgID := fmt.Sprintf("%v", time.Now().Unix())
-	_, err = js.Publish(stream+".test", []byte("hi"), nats.MsgId(msgID))
-	assert.NoError(t, err, "failed to publish")
-	// each durable gets its own copy of the message
-	for i, rcv := range []*receivedMsg{&rcv1, &rcv2} {
-		assert.Eventually(t, rcv.received, 10*time.Second, 50*time.Millisecond, "message %d not received", i+1)
-		data, msgid := rcv.get()
-		assert.Equal(t, "hi", data, "message %d didnt match", i+1)
-		assert.Equal(t, msgID, msgid, "msgid %d didnt match", i+1)
-	}
-	ci, err := js.ConsumerInfo(stream, "qtest1")
-	require.NoError(t, err)
-	assert.Equal(t, "queue consumer for "+stream, ci.Config.Description)
-}
-
-func TestQueueConsumerLoadBalanced(t *testing.T) {
-	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "queuel")
-	// the two consumers share one durable, so each message is delivered to
-	// exactly one of them. which consumer gets which message depends on whose
-	// pull request reaches the server first, so assert on the union instead of
-	// a fixed pairing
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("stream%v", time.Now().UnixNano())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
 	var lock sync.Mutex
-	received := make(map[string]string) // msgid -> payload
-	var deliveries int
-	handler := func(who string) Handler {
-		return func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-			if err := msg.AckSync(); err != nil {
-				return err
-			}
-			msgid := GetMsgIdFromHeader(msg)
-			t.Log(who, "received:", string(buf), "msgid:", msgid)
-			lock.Lock()
-			received[msgid] = string(buf)
-			deliveries++
-			lock.Unlock()
-			return nil
-		}
+	var received string
+	var msgid string
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("received:", string(buf), "msgid:", _msgid)
+		lock.Lock()
+		received = string(buf)
+		msgid = _msgid
+		lock.Unlock()
+		msg.AckSync()
+		return nil
 	}
-	sub1, err := NewQueueConsumer(log, js, stream, "qtest1", stream+".>", handler("1"), WithQueueReplicas(1))
-	require.NoError(t, err, "failed to create consumer 1")
-	defer sub1.Close()
-	sub2, err := NewQueueConsumer(log, js, stream, "qtest1", stream+".>", handler("2"), WithQueueReplicas(1))
-	require.NoError(t, err, "failed to create consumer 2")
-	defer sub2.Close()
-	msgID1 := fmt.Sprintf("a-%v", time.Now().UnixNano())
-	msgID2 := fmt.Sprintf("b-%v", time.Now().UnixNano())
-	_, err = js.Publish(stream+".test", []byte(msgID1), nats.MsgId(msgID1))
-	assert.NoError(t, err, "failed to publish")
-	_, err = js.Publish(stream+".test", []byte(msgID2), nats.MsgId(msgID2))
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test", queue+".*", handler, WithExactlyOnceReplicas(1))
+	assert.NoError(t, err, "failed to create consumer")
+	assert.NotNil(t, sub, "sub result was nil")
+	_msgid := fmt.Sprintf("%v", time.Now().UnixNano())
+	_, err = js.Publish(queue+".test", []byte("hi"), nats.MsgId(_msgid))
 	assert.NoError(t, err, "failed to publish")
 	assert.Eventually(t, func() bool {
 		lock.Lock()
 		defer lock.Unlock()
-		return len(received) == 2
-	}, 10*time.Second, 50*time.Millisecond, "both messages not received")
+		return received != ""
+	}, 10*time.Second, 50*time.Millisecond, "message not received")
 	lock.Lock()
-	assert.Equal(t, msgID1, received[msgID1], "message1 didnt match")
-	assert.Equal(t, msgID2, received[msgID2], "message2 didnt match")
-	assert.Equal(t, 2, deliveries, "each message should be delivered exactly once")
+	assert.Equal(t, "hi", received, "message didnt match")
+	assert.Equal(t, _msgid, msgid, "msgid didnt match")
 	lock.Unlock()
+	ci, err := js.ConsumerInfo(queue, "test")
+	assert.NotNil(t, ci)
+	assert.NoError(t, err)
+	assert.Equal(t, "exactly once consumer for "+queue, ci.Config.Description)
+	sub.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestExactlyOnceConsumerWithMsgPack(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("streammsg%v", time.Now().UnixNano())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var lock sync.Mutex
+	var received string
+	var msgid string
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("received:", string(buf), "msgid:", _msgid)
+		lock.Lock()
+		received = string(buf)
+		msgid = _msgid
+		lock.Unlock()
+		msg.AckSync()
+		return nil
+	}
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test2", queue+".*", handler, WithExactlyOnceReplicas(1))
+	assert.NoError(t, err, "failed to create consumer")
+	assert.NotNil(t, sub, "sub result was nil")
+	_msgid := fmt.Sprintf("%v", time.Now().UnixNano())
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+	assert.NoError(t, enc.Encode(map[string]any{"hi": "there"}))
+	msg := nats.NewMsg(queue + ".test")
+	msg.Data = buf.Bytes()
+	SetContentEncodingHeader(msg, "msgpack")
+	_, err = js.PublishMsg(msg, nats.MsgId(_msgid))
+	assert.NoError(t, err, "failed to publish")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return received != ""
+	}, 10*time.Second, 50*time.Millisecond, "message not received")
+	lock.Lock()
+	assert.Equal(t, `{"hi":"there"}`, received, "message didnt match")
+	assert.Equal(t, _msgid, msgid, "msgid didnt match")
+	lock.Unlock()
+	ci, err := js.ConsumerInfo(queue, "test2")
+	assert.NotNil(t, ci)
+	assert.NoError(t, err)
+	assert.Equal(t, "exactly once consumer for "+queue, ci.Config.Description)
+	sub.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestQueueConsumer(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	queue := fmt.Sprintf("qc%v", time.Now().UnixNano())
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	log.Debug("error: %v", err)
+	assert.NoError(t, err, "failed to create stream")
+	var lock sync.Mutex
+	var received1 string
+	var msgid1 string
+	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("1 received:", string(buf), "msgid:", _msgid)
+		lock.Lock()
+		received1 = string(buf)
+		msgid1 = _msgid
+		lock.Unlock()
+		msg.AckSync()
+		return nil
+	}
+	var received2 string
+	var msgid2 string
+	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("2 received:", string(buf), "msgid:", _msgid)
+		lock.Lock()
+		received2 = string(buf)
+		msgid2 = _msgid
+		lock.Unlock()
+		msg.AckSync()
+		return nil
+	}
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", queue+".*", handler1, WithQueueReplicas(1))
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest2", queue+".*", handler2, WithQueueReplicas(1))
+	assert.NoError(t, err, "failed to create consumer 2")
+	assert.NotNil(t, sub2, "sub2 result was nil")
+	_msgid := fmt.Sprintf("%v", time.Now().UnixNano())
+	_, err = js.Publish(queue+".test", []byte("hi"), nats.MsgId(_msgid))
+	assert.NoError(t, err, "failed to publish")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return received1 != "" && received2 != ""
+	}, 10*time.Second, 50*time.Millisecond, "messages not received")
+	lock.Lock()
+	assert.Equal(t, "hi", received1, "message didnt match")
+	assert.Equal(t, _msgid, msgid1, "msgid didnt match")
+	assert.Equal(t, "hi", received2, "message didnt match")
+	assert.Equal(t, _msgid, msgid2, "msgid didnt match")
+	lock.Unlock()
+	ci, err := js.ConsumerInfo(queue, "qtest1")
+	assert.NotNil(t, ci)
+	assert.NoError(t, err)
+	assert.Equal(t, "queue consumer for "+queue, ci.Config.Description)
+	sub1.Close()
+	sub2.Close()
+	n.Close()
+	server.Shutdown()
+}
+
+func TestQueueConsumerLoadBalanced(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	queue := fmt.Sprintf("queuel%v", time.Now().UnixNano())
+	subject := queue + ".>"
+	message := queue + ".test"
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{subject},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var lock sync.Mutex
+	var received1 string
+	var msgid1 string
+	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("1 received:", string(buf), "msgid:", _msgid)
+		lock.Lock()
+		received1 = string(buf)
+		msgid1 = _msgid
+		lock.Unlock()
+		msg.AckSync()
+		return nil
+	}
+	var received2 string
+	var msgid2 string
+	handler2 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("2 received:", string(buf), "msgid:", _msgid)
+		lock.Lock()
+		received2 = string(buf)
+		msgid2 = _msgid
+		lock.Unlock()
+		msg.AckSync()
+		return nil
+	}
+	sub1, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler1, WithQueueReplicas(1))
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	sub2, err := NewQueueConsumer(log, js, queue, "qtest1", subject, handler2, WithQueueReplicas(1))
+	assert.NoError(t, err, "failed to create consumer 2")
+	assert.NotNil(t, sub2, "sub2 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().UnixNano())
+	_msgid2 := fmt.Sprintf("b-%v", time.Now().UnixNano())
+	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
+	assert.NoError(t, err, "failed to publish")
+	_, err = js.Publish(message, []byte(_msgid2), nats.MsgId(_msgid2))
+	assert.NoError(t, err, "failed to publish")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return received1 != "" && received2 != ""
+	}, 10*time.Second, 50*time.Millisecond, "both load balanced messages not received")
+	lock.Lock()
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
+	assert.Equal(t, _msgid2, received2, "message2 didnt match")
+	assert.Equal(t, _msgid2, msgid2, "msgid2 didnt match")
+	lock.Unlock()
+	sub1.Close()
+	sub2.Close()
+	n.Close()
+	server.Shutdown()
 }
 
 func TestQueueConsumerResubscribesWhenConsumerBreaks(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "resub")
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	defer n.Close()
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("resub%v", time.Now().UnixNano())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
+	})
+	assert.NoError(t, err, "failed to create stream")
 	var lock sync.Mutex
 	received := make(map[string]bool)
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		// ack before recording so the test can't delete the consumer while the
-		// ack is still in flight
 		if err := msg.AckSync(); err != nil {
 			return err
 		}
@@ -244,137 +342,222 @@ func TestQueueConsumerResubscribesWhenConsumerBreaks(t *testing.T) {
 		lock.Unlock()
 		return nil
 	}
-	got := func(key string) func() bool {
-		return func() bool {
-			lock.Lock()
-			defer lock.Unlock()
-			return received[key]
-		}
-	}
-	sub, err := NewQueueConsumer(log, js, stream, "resub", stream+".*", handler, WithQueueReplicas(1), WithQueueDelivery(nats.DeliverAllPolicy))
-	require.NoError(t, err, "failed to create consumer")
+	sub, err := NewQueueConsumer(log, js, queue, "resub", queue+".*", handler, WithQueueReplicas(1), WithQueueDelivery(nats.DeliverAllPolicy))
+	assert.NoError(t, err, "failed to create consumer")
 	defer sub.Close()
-	_, err = js.Publish(stream+".test", []byte("before"))
+	_, err = js.Publish(queue+".test", []byte("before"))
 	assert.NoError(t, err, "failed to publish")
-	assert.Eventually(t, got("before"), 10*time.Second, 50*time.Millisecond, "first message not received")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return received["before"]
+	}, 10*time.Second, 50*time.Millisecond, "first message not received")
 
-	// deleting the consumer fails the pending fetch with a terminal error (the
-	// same error class as a jetstream leadership change) and the subscriber
-	// must recover by recreating the subscription
-	require.NoError(t, js.DeleteConsumer(stream, "resub"), "failed to delete consumer")
-	_, err = js.Publish(stream+".test", []byte("after"))
+	assert.NoError(t, js.DeleteConsumer(queue, "resub"), "failed to delete consumer")
+
+	time.Sleep(time.Second) // wait for subscriber to detect deletion and resubscribe
+	_, err = js.Publish(queue+".test", []byte("after"))
 	assert.NoError(t, err, "failed to publish")
-	assert.Eventually(t, got("after"), 15*time.Second, 50*time.Millisecond, "message after resubscribe not received")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return received["after"]
+	}, 10*time.Second, 50*time.Millisecond, "message published after delete was not received")
 }
 
 func TestEphemeralConsumer(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
 	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "ephem")
-	subject := stream + ".>"
-	var received, msgid string
+	queue := fmt.Sprintf("ephem%v", time.Now().UnixNano())
+	subject := queue + ".>"
+	message := queue + ".test"
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{subject},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var received1 string
+	var msgid1 string
 	var wg sync.WaitGroup
-	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+	handler1 := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
 		defer wg.Done()
-		received = string(buf)
-		msgid = GetMsgIdFromHeader(msg)
-		t.Log("received:", received, "msgid:", msgid)
+		_msgid := GetMsgIdFromHeader(msg)
+		t.Log("1 received:", string(buf), "msgid:", _msgid)
+		received1 = string(buf)
+		msgid1 = _msgid
 		return msg.AckSync()
 	}
 	wg.Add(1)
-	sub1, err := NewEphemeralConsumer(log, js, stream, subject, handler)
-	require.NoError(t, err, "failed to create consumer 1")
-	msgID := fmt.Sprintf("a-%v", time.Now().Unix())
-	_, err = js.Publish(stream+".test", []byte(msgID), nats.MsgId(msgID))
+	sub1, err := NewEphemeralConsumer(log, js, queue, subject, handler1)
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().UnixNano())
+	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
 	assert.NoError(t, err, "failed to publish")
 	wg.Wait()
-	assert.Equal(t, msgID, received, "message1 didnt match")
-	assert.Equal(t, msgID, msgid, "msgid1 didnt match")
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
 	sub1.Close()
-
-	// a fresh consumer with the deliver-all policy re-receives the message
-	received, msgid = "", ""
+	received1 = ""
+	msgid1 = ""
 	wg.Add(1)
-	sub2, err := NewEphemeralConsumer(log, js, stream, subject, handler, WithEphemeralDelivery(nats.DeliverAllPolicy))
-	require.NoError(t, err, "failed to create consumer 2")
+	sub2, err := NewEphemeralConsumer(log, js, queue, subject, handler1, WithEphemeralDelivery(nats.DeliverAllPolicy))
+	assert.NoError(t, err, "failed to create consumer 2")
+	assert.NotNil(t, sub2, "sub2 result was nil")
 	wg.Wait()
-	assert.Equal(t, msgID, received, "message2 didnt match")
-	assert.Equal(t, msgID, msgid, "msgid2 didnt match")
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
 	sub2.Close()
-
-	received, msgid = "", ""
+	received1 = ""
+	msgid1 = ""
 	wg.Add(1)
-	sub3, err := NewEphemeralConsumer(log, js, stream, subject, handler, WithEphemeralDelivery(nats.DeliverAllPolicy))
-	require.NoError(t, err, "failed to create consumer 3")
+	sub3, err := NewEphemeralConsumer(log, js, queue, subject, handler1, WithEphemeralDelivery(nats.DeliverAllPolicy))
+	assert.NoError(t, err, "failed to create consumer 3")
+	assert.NotNil(t, sub3, "sub3 result was nil")
 	wg.Wait()
-	assert.Equal(t, msgID, received, "message3 didnt match")
-	assert.Equal(t, msgID, msgid, "msgid3 didnt match")
-	ci := <-js.Consumers(stream)
-	require.NotNil(t, ci)
-	assert.Equal(t, "ephemeral consumer for "+stream, ci.Config.Description)
+	assert.Equal(t, _msgid1, received1, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid1, "msgid1 didnt match")
+	ci := <-js.Consumers(queue)
+	assert.NotNil(t, ci)
+	assert.Equal(t, "ephemeral consumer for "+queue, ci.Config.Description)
 	sub3.Close()
+	n.Close()
+	server.Shutdown()
 }
 
 func TestEphemeralConsumerAutoExtend(t *testing.T) {
+	server := RunTestServer(true)
+	defer server.Shutdown()
 	log := logger.NewConsoleLogger()
-	js, stream := jetStreamTest(t, log, "aephem")
-	var rcv receivedMsg
+	queue := fmt.Sprintf("aephem%v", time.Now().UnixNano())
+	subject := queue + ".>"
+	message := queue + ".test"
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{subject},
+	})
+	assert.NoError(t, err, "failed to create stream")
+	var lock sync.Mutex
+	var received string
+	var msgid string
 	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
-		msgid := GetMsgIdFromHeader(msg)
-		log.Info("received: %s, msgid: %s", string(buf), msgid)
+		_msgid := GetMsgIdFromHeader(msg)
+		log.Info("received: %s, msgid: %s", string(buf), _msgid)
 		time.Sleep(time.Second * 5) // block to force the extender to run
-		rcv.set(string(buf), msgid)
-		return msg.AckSync()
-	}
-	sub, err := NewEphemeralConsumer(log, js, stream, stream+".>", handler, WithEphemeralAckWait(time.Second*2))
-	require.NoError(t, err, "failed to create consumer 1")
-	defer sub.Close()
-	msgID := fmt.Sprintf("a-%v", time.Now().Unix())
-	_, err = js.Publish(stream+".test", []byte(msgID), nats.MsgId(msgID))
-	assert.NoError(t, err, "failed to publish")
-	assert.Eventually(t, rcv.received, 15*time.Second, 100*time.Millisecond, "message not received")
-	data, msgid := rcv.get()
-	assert.Equal(t, msgID, data, "message1 didnt match")
-	assert.Equal(t, msgID, msgid, "msgid1 didnt match")
-}
-
-// testConsumerConfigChanged pre-creates a durable whose config differs from
-// what the constructor wants (empty description) and verifies the constructor
-// updates the consumer instead of failing
-func testConsumerConfigChanged(t *testing.T, maxAckPending int, newConsumer func(log logger.Logger, js nats.JetStreamContext, stream string, handler Handler) (Subscriber, error)) {
-	t.Helper()
-	log := logger.NewTestLogger()
-	js, stream := jetStreamTest(t, log, "cfg")
-	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		lock.Lock()
+		received = string(buf)
+		msgid = _msgid
+		lock.Unlock()
+		msg.AckSync()
 		return nil
 	}
-	ci, err := js.AddConsumer(stream, &nats.ConsumerConfig{
-		Durable:       "test",
-		Name:          "test",
-		FilterSubject: stream + ".*",
-		AckPolicy:     nats.AckExplicitPolicy,
-		DeliverPolicy: nats.DeliverNewPolicy,
-		MaxDeliver:    1,
-		MaxAckPending: maxAckPending,
-		Replicas:      1,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, ci)
-	sub, err := newConsumer(log, js, stream, handler)
-	require.NoError(t, err)
-	require.NotNil(t, sub)
-	sub.Close()
+	sub1, err := NewEphemeralConsumer(log, js, queue, subject, handler, WithEphemeralAckWait(time.Second*2))
+	assert.NoError(t, err, "failed to create consumer 1")
+	assert.NotNil(t, sub1, "sub1 result was nil")
+	_msgid1 := fmt.Sprintf("a-%v", time.Now().UnixNano())
+	_, err = js.Publish(message, []byte(_msgid1), nats.MsgId(_msgid1))
+	assert.NoError(t, err, "failed to publish")
+	assert.Eventually(t, func() bool {
+		lock.Lock()
+		defer lock.Unlock()
+		return received != ""
+	}, 15*time.Second, 100*time.Millisecond, "auto extend message not received")
+	lock.Lock()
+	assert.Equal(t, _msgid1, received, "message1 didnt match")
+	assert.Equal(t, _msgid1, msgid, "msgid1 didnt match")
+	lock.Unlock()
+	sub1.Close()
+	n.Close()
+	server.Shutdown()
 }
 
 func TestExactlyOnceConsumerConfigChanged(t *testing.T) {
-	testConsumerConfigChanged(t, 1, func(log logger.Logger, js nats.JetStreamContext, stream string, handler Handler) (Subscriber, error) {
-		return NewExactlyOnceConsumer(log, js, stream, "test", stream+".*", handler, WithExactlyOnceReplicas(1))
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("stream%v", time.Now().UnixNano())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
 	})
+	assert.NoError(t, err, "failed to create stream")
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		return nil
+	}
+	ci, err := js.AddConsumer(queue, &nats.ConsumerConfig{
+		Durable:       "test",
+		Name:          "test",
+		Description:   "",
+		FilterSubject: queue + ".*",
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxAckPending: 1,
+		MaxDeliver:    1,
+		DeliverPolicy: nats.DeliverNewPolicy,
+		Replicas:      1,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, ci)
+	sub, err := NewExactlyOnceConsumer(log, js, queue, "test", queue+".*", handler, WithExactlyOnceReplicas(1))
+	assert.NoError(t, err)
+	assert.NotNil(t, sub)
+	sub.Close()
 }
 
 func TestQueueConsumerConfigChanged(t *testing.T) {
-	testConsumerConfigChanged(t, 1000, func(log logger.Logger, js nats.JetStreamContext, stream string, handler Handler) (Subscriber, error) {
-		return NewQueueConsumer(log, js, stream, "test", stream+".*", handler, WithQueueReplicas(1))
+	server := RunTestServer(true)
+	defer server.Shutdown()
+	log := logger.NewTestLogger()
+	n, err := NewNats(log, "test", server.ClientURL(), nil)
+	assert.NoError(t, err, "failed to connect to nats")
+	assert.NotNil(t, n, "result was nil")
+	js, err := n.JetStream()
+	assert.NoError(t, err, "failed to create jetstream")
+	assert.NotNil(t, js, "js result was nil")
+	queue := fmt.Sprintf("qstream%v", time.Now().UnixNano())
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     queue,
+		Subjects: []string{queue + ".>"},
 	})
+	assert.NoError(t, err, "failed to create stream")
+	handler := func(ctx context.Context, buf []byte, msg *nats.Msg) error {
+		return nil
+	}
+	ci, err := js.AddConsumer(queue, &nats.ConsumerConfig{
+		Durable:       "test",
+		Name:          "test",
+		Description:   "",
+		FilterSubject: queue + ".*",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverNewPolicy,
+		MaxDeliver:    1,
+		MaxAckPending: 1000,
+		Replicas:      1,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, ci)
+	sub, err := NewQueueConsumer(log, js, queue, "test", queue+".*", handler, WithQueueReplicas(1))
+	assert.NoError(t, err)
+	assert.NotNil(t, sub)
+	sub.Close()
 }
 
 func TestDiffConfig(t *testing.T) {

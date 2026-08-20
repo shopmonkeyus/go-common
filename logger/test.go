@@ -13,13 +13,19 @@ type TestLogEntry struct {
 }
 
 type TestLogger struct {
-	mu       sync.Mutex
+	mu       *sync.Mutex
 	metadata map[string]interface{}
 	Logs     []TestLogEntry
-	root     *TestLogger // set on loggers derived via With so all entries land in the root's Logs
+	root     *TestLogger
 }
 
 var _ Logger = (*TestLogger)(nil)
+
+func NewTestLogger() *TestLogger {
+	return &TestLogger{
+		mu: &sync.Mutex{},
+	}
+}
 
 func (c *TestLogger) WithSink(sink Sink, level LogLevel) Logger {
 	return c
@@ -49,17 +55,24 @@ func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 	if root == nil {
 		root = c
 	}
-	return &TestLogger{metadata: kv, root: root}
+	return &TestLogger{
+		mu:       c.mu,
+		metadata: kv,
+		root:     root,
+	}
 }
 
 func (c *TestLogger) Log(level string, msg string, args ...interface{}) {
-	if c.root != nil {
-		c.root.Log(level, msg, args...)
-		return
+	if c.mu == nil {
+		c.mu = &sync.Mutex{}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Logs = append(c.Logs, TestLogEntry{level, msg, args})
+	if c.root != nil {
+		c.root.Logs = append(c.root.Logs, TestLogEntry{level, msg, args})
+	} else {
+		c.Logs = append(c.Logs, TestLogEntry{level, msg, args})
+	}
 }
 
 func (c *TestLogger) Trace(msg string, args ...interface{}) {
@@ -75,7 +88,7 @@ func (c *TestLogger) Info(msg string, args ...interface{}) {
 }
 
 func (c *TestLogger) Warn(msg string, args ...interface{}) {
-	c.Log("WARNING", msg, args...)
+	c.Log("WARN", msg, args...)
 }
 
 func (c *TestLogger) Error(msg string, args ...interface{}) {
@@ -87,17 +100,10 @@ func (c *TestLogger) Fatal(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func (c *TestLogger) Flush() error {
-	return nil
-}
-
-func (c *TestLogger) WithContext(_ context.Context) Logger {
+func (c *TestLogger) WithContext(ctx context.Context) Logger {
 	return c
 }
 
-// NewTestLogger returns a new Logger instance useful for testing
-func NewTestLogger() *TestLogger {
-	return &TestLogger{
-		Logs: make([]TestLogEntry, 0),
-	}
+func (c *TestLogger) Flush() error {
+	return nil
 }
