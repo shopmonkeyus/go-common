@@ -40,7 +40,17 @@ Non-negotiable. If a later rule seems to conflict with one of these, the invaria
 
 3. **The `logger` package is the org-wide standard.** Every service's `CLAUDE.md` carries the invariant "shared logger only — no stdlib `log`, no `slog`, no `zap`". That promise lives here. Changing logger behaviour changes how every service logs, including in production incidents.
 
-4. **The `dbchange` package mirrors a wire contract.** The `dbchange.*` NATS subject and payload shape is produced by `changefeed` and consumed by `depot`, `eds`, `manifold`, and the `backend` consumer. If the types here drift from what `changefeed` emits, consumers deserialize garbage. Coordinate any change with `changefeed`.
+4. **`dbchange` defines a wire format, and `changefeed` is its only importer.**
+
+   Verified 2026-08-21: `changefeed` imports `go-common/dbchange` in **14 files**. `manifold`, `eds`, `depot`, `wrench` and `director` import it in **none**. Each parses the JSON with its own independently-maintained struct.
+
+   **That makes this package more dangerous to change, not less.** It carries the JSON tags, and `changefeed` marshals it onto the `dbchange.*` subject. So these tags *are* the contract:
+
+   - Rename or retag a field and the emitted JSON changes. **Nothing fails to compile**, because no consumer imports this package.
+   - `go mod why` will not find the affected services. Dependency tooling cannot see the coupling at all.
+   - The consumer structs have **already drifted**. `eds/internal/dbchange.go` omits `region`, `sessionId` and `version`, and adds its own `imported` flag.
+
+   **A JSON-tag change here is a silent breaking change to four services.** Coordinate with `changefeed`, and read each consumer's own struct by hand — the compiler will not help you.
 
 5. **`nats` is the shared connection and consumer layer.** 1,659 lines that every event-driven service depends on. Reconnect, ack, and error semantics are load-bearing.
 
@@ -99,7 +109,7 @@ Before opening a PR:
 2. `go test ./...` passes
 3. **No internal hostname, project ID, cluster name, or credential appears in the diff**
 4. No exported signature changed. New surface is additive
-5. If `dbchange` types changed, the PR names the coordinating `changefeed` change
+5. If a `dbchange` **JSON tag** changed, the PR names the coordinating `changefeed` change **and** lists which consumer structs were checked by hand. No consumer imports this package, so nothing will fail to compile
 6. If `logger` behaviour changed, the PR names which services are affected
 7. New exported functions have a doc comment. This is a public module
 
