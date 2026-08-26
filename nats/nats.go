@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +16,11 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-const maxDeliveryAttempts = 10
+const (
+	maxDeliveryAttempts = 10
+	fetchMaxWait        = 10 * time.Second
+	resubscribeDelay    = time.Second
+)
 
 type Handler func(ctx context.Context, payload []byte, msg *nats.Msg) error
 
@@ -61,7 +64,7 @@ var _ Subscriber = (*subscriber)(nil)
 
 func newSubscriber(opts subscriberOpts) *subscriber {
 	_ctx, cancel := context.WithCancel(opts.ctx)
-	if opts.extendInterval.Nanoseconds() == 0 {
+	if opts.extendInterval <= 0 {
 		opts.extendInterval = time.Second * 28
 	}
 	if opts.maxfetch <= 0 {
@@ -77,10 +80,10 @@ func newSubscriber(opts subscriberOpts) *subscriber {
 		maxfetch:       opts.maxfetch,
 		disableLog:     opts.disableLog,
 	}
-	s, err := opts.newsub()
-	if err == nil {
+	if s, err := opts.newsub(); err == nil {
 		sub.sub = s
 	}
+	sub.wg.Add(2)
 	go sub.extender()
 	go sub.run()
 	return sub
@@ -91,22 +94,30 @@ func (s *subscriber) Close() error {
 	s.logger.Debug("subscriber closing")
 	s.lock.Lock()
 	s.shutdown = true
+	sub := s.sub
+	s.sub = nil
 	s.lock.Unlock()
-	s.cancel()          // signal a blocking fetch to wake up
-	s.sub.Unsubscribe() // unsubscribe so we don't get more messages
-	s.wg.Wait()         // wait for us to nack all pending messages if any
-	s.sub.Drain()       // close up shop
+
+	s.cancel() // signal sleep and extender to wake up/stop
+	if sub != nil {
+		sub.Unsubscribe() // wake up blocking fetch and stop delivery
+	}
+	s.wg.Wait()
 	s.logger.Debug("subscriber closed")
 	return nil
 }
 
+func (s *subscriber) sleep(d time.Duration) {
+	select {
+	case <-s.ctx.Done():
+	case <-time.After(d):
+	}
+}
+
 func (s *subscriber) extender() {
-	s.wg.Add(1)
+	defer s.wg.Done()
 	t := time.NewTicker(s.extendInterval)
-	defer func() {
-		t.Stop()
-		s.wg.Done()
-	}()
+	defer t.Stop()
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -125,7 +136,11 @@ func (s *subscriber) extender() {
 			s.ackLock.Lock()
 			if s.inflight != nil {
 				if !s.disableLog {
-					s.logger.Debug("extending %s ack timeout (%s/%d) running %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, time.Since(*s.inflightStarted))
+					var running time.Duration
+					if s.inflightStarted != nil {
+						running = time.Since(*s.inflightStarted)
+					}
+					s.logger.Debug("extending %s ack timeout (%s/%d) running %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, running)
 				}
 				if err := s.inflight.InProgress(); err != nil {
 					s.logger.Error("error extending in progress %s (%s/%d): %v", s.inflight.Subject, s.inflightMsgid, s.inflightSeq, err)
@@ -137,151 +152,229 @@ func (s *subscriber) extender() {
 }
 
 func (s *subscriber) run() {
-	s.wg.Add(1)
 	defer s.wg.Done()
 	for {
 		s.lock.Lock()
-		shutdown := s.shutdown
-		hassub := s.sub != nil
-		s.lock.Unlock()
-		if shutdown {
+		if s.shutdown {
+			s.lock.Unlock()
 			return
 		}
-		if !hassub {
+		sub := s.sub
+		s.lock.Unlock()
+
+		if sub == nil {
 			s.logger.Trace("need to create a new subscription")
-			sub, err := s.newsub()
+			newSub, err := s.newsub()
 			if err != nil {
-				if errors.Is(err, nats.ErrTimeout) || errors.Is(err, nats.ErrConnectionClosed) {
-					time.Sleep(time.Second)
-					continue
+				if !errors.Is(err, nats.ErrTimeout) && !errors.Is(err, nats.ErrConnectionClosed) && !errors.Is(err, nats.ErrDisconnected) {
+					s.logger.Error("error creating new subscription: %s", err)
 				}
-				s.logger.Error("error creating new subscription: %s", err)
-				time.Sleep(time.Second)
+				s.sleep(resubscribeDelay)
 				continue
 			}
 			s.lock.Lock()
-			s.sub = sub
+			if s.shutdown {
+				s.lock.Unlock()
+				newSub.Unsubscribe()
+				return
+			}
+			s.sub = newSub
+			sub = newSub
 			s.lock.Unlock()
 		}
-		msgs, err := s.sub.Fetch(s.maxfetch, nats.MaxWait(time.Minute))
+
+		msgs, err := sub.Fetch(s.maxfetch, nats.MaxWait(fetchMaxWait))
 		if err != nil {
 			s.lock.Lock()
 			shutdown := s.shutdown
 			s.lock.Unlock()
-			if shutdown {
+			if shutdown || errors.Is(err, context.Canceled) {
 				return
 			}
-			// check to see if cancelled
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-			// this is normal and we should continue to fetch more messages
-			if errors.Is(err, context.DeadlineExceeded) {
-				time.Sleep(time.Microsecond * 10)
-				continue
-			}
-			fatalNatsErrors := []error{
-				nats.ErrConnectionClosed,
-				nats.ErrDisconnected,
-				nats.ErrFetchDisconnected,
-			}
-			for _, fatalError := range fatalNatsErrors {
-				if errors.Is(err, fatalError) {
-					s.logger.Error("restarting to reconnect to nats...👋: %s", err)
-					// lost outer nats connection so restart
-					// otherwise we loop forever trying to reconnect
-					os.Exit(1)
+			if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+				// idle fetch. pull requests sent after a consumer is deleted
+				// are not answered, so check whether it is still there.
+				// only drop the subscription if the consumer is actually gone;
+				// timeouts and disconnects during reconnect must not churn it.
+				if _, cerr := sub.ConsumerInfo(); isConsumerGone(cerr) {
+					s.logger.Error("consumer is unavailable (%s), recreating the subscription", cerr)
+					s.dropSub()
+					s.sleep(resubscribeDelay)
 				}
+				continue
 			}
 
-			if errors.Is(err, nats.ErrTimeout) {
-				time.Sleep(time.Microsecond * 10)
-				continue
+			if !errors.Is(err, nats.ErrConnectionClosed) && !errors.Is(err, nats.ErrDisconnected) && !errors.Is(err, nats.ErrFetchDisconnected) {
+				s.logger.Error("subscription fetch error: %s", err)
 			}
-			s.logger.Error("subscription fetch error: %s", err)
-			time.Sleep(time.Second)
+
+			s.dropSub()
+			s.sleep(resubscribeDelay)
 			continue
 		}
+
 		for _, msg := range msgs {
-			// check through each message we process to make sure we're not in a shutdown
-			// and if so, nack the message to allow another
 			s.lock.Lock()
 			if s.shutdown {
-				msg.Nak()
 				s.lock.Unlock()
-				continue // keep going so that we nack all the messages
+				msg.Nak()
+				continue
 			}
 			s.lock.Unlock()
-			msgid := GetMsgIdFromHeader(msg)
-			if msgid == "" {
-				msgid = gstring.SHA256(msg.Data)
-			}
-			md, _ := msg.Metadata()
-			sharedLogData := fmt.Sprintf("sub: %s, msgId: %s, consumerSeq: %v, streamSeq: %v, attempt: %d", msg.Subject, msgid, md.Sequence.Consumer, md.Sequence.Stream, md.NumDelivered)
-			if md.NumDelivered > maxDeliveryAttempts {
-				s.logger.Warn("terminating %s", sharedLogData)
-				msg.Term() // no longer allow it to be reprocessed
-				continue
-			}
-			if !s.disableLog {
-				s.logger.Debug("processing %s", sharedLogData)
-			}
-			encoding := GetContentEncodingFromHeader(msg)
-			gzipped := encoding == "gzip/json"
-			msgpacked := encoding == "msgpack"
-			started := time.Now()
-			var err error
-			data := msg.Data
-			if gzipped {
-				data, err = compress.Gunzip(data)
-			} else if msgpacked {
-				var o any
-				err = msgpack.Unmarshal(data, &o)
-				if err == nil {
-					data, err = json.Marshal(o)
-				}
-			}
-			if err != nil {
-				s.logger.Error("error uncompressing %s. err: %s", sharedLogData, err)
-				msg.AckSync()
-				continue
-			}
 
-			// record our inflight message
-			s.ackLock.Lock()
-			s.inflight = msg
-			s.inflightMsgid = msgid
-			s.inflightSeq = md.Sequence.Consumer
-			s.inflightStarted = &started
-			s.ackLock.Unlock()
-
-			// run our callback handler
-			err = s.handler(s.ctx, data, msg)
-
-			// make sure we untrack the inflight state so that the extender knows we're idle
-			s.ackLock.Lock()
-			s.inflight = nil
-			s.inflightMsgid = ""
-			s.inflightSeq = 0
-			s.inflightStarted = nil
-			s.ackLock.Unlock()
-
-			// now do cleanup
-			if err != nil && !strings.Contains(err.Error(), "message was already acknowledged") {
-				if errors.Is(err, context.Canceled) {
-					s.logger.Warn("nack %s [canceled]", sharedLogData)
-					msg.Nak()
-				} else {
-					s.logger.Error("error handling %s. err: %s", sharedLogData, err)
-					msg.AckSync()
-				}
-			}
+			s.process(msg)
 		}
 	}
 }
 
+func (s *subscriber) process(msg *nats.Msg) {
+	msgid := GetMsgIdFromHeader(msg)
+	if msgid == "" {
+		msgid = gstring.SHA256(msg.Data)
+	}
+	md, _ := msg.Metadata()
+	sharedLogData := fmt.Sprintf("sub: %s, msgId: %s, consumerSeq: %v, streamSeq: %v, attempt: %d", msg.Subject, msgid, md.Sequence.Consumer, md.Sequence.Stream, md.NumDelivered)
+	if md.NumDelivered > maxDeliveryAttempts {
+		s.logger.Warn("terminating %s", sharedLogData)
+		msg.Term()
+		return
+	}
+	if !s.disableLog {
+		s.logger.Debug("processing %s", sharedLogData)
+	}
+	encoding := GetContentEncodingFromHeader(msg)
+	gzipped := encoding == "gzip/json"
+	msgpacked := encoding == "msgpack"
+	started := time.Now()
+	var err error
+	data := msg.Data
+	if gzipped {
+		data, err = compress.Gunzip(data)
+	} else if msgpacked {
+		var o any
+		err = msgpack.Unmarshal(data, &o)
+		if err == nil {
+			data, err = json.Marshal(o)
+		}
+	}
+	if err != nil {
+		s.logger.Error("error uncompressing %s. err: %s", sharedLogData, err)
+		msg.AckSync()
+		return
+	}
+
+	s.ackLock.Lock()
+	s.inflight = msg
+	s.inflightMsgid = msgid
+	s.inflightSeq = md.Sequence.Consumer
+	s.inflightStarted = &started
+	s.ackLock.Unlock()
+
+	err = s.handler(s.ctx, data, msg)
+
+	s.ackLock.Lock()
+	s.inflight = nil
+	s.inflightMsgid = ""
+	s.inflightSeq = 0
+	s.inflightStarted = nil
+	s.ackLock.Unlock()
+
+	if err != nil && !strings.Contains(err.Error(), "message was already acknowledged") {
+		if errors.Is(err, context.Canceled) {
+			s.logger.Warn("nack %s [canceled]", sharedLogData)
+			msg.Nak()
+		} else {
+			s.logger.Error("error handling %s. err: %s", sharedLogData, err)
+			msg.AckSync()
+		}
+	}
+}
+
+func (s *subscriber) dropSub() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.sub != nil {
+		s.sub.Unsubscribe()
+		s.sub = nil
+	}
+}
+
+func isConsumerGone(err error) bool {
+	return errors.Is(err, nats.ErrConsumerNotFound) || errors.Is(err, nats.ErrConsumerDeleted)
+}
+
 func isConsumerNameAlreadyExistsError(err error) bool {
-	return strings.Contains(err.Error(), "consumer name already in use")
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, nats.ErrConsumerNameAlreadyInUse) || strings.Contains(err.Error(), "consumer name already in use")
+}
+
+type durablePullOpts struct {
+	ctx        context.Context
+	logger     logger.Logger
+	js         nats.JetStreamContext
+	stream     string
+	consumer   *nats.ConsumerConfig
+	subOpts    []nats.SubOpt
+	handler    Handler
+	maxfetch   int
+	disableLog bool
+	logPrefix  string
+}
+
+// newDurablePullSubscriber creates the durable if needed and returns a
+// subscriber that re-creates it on resubscribe, so Unsubscribe cannot delete a
+// consumer shared with other subscribers.
+func newDurablePullSubscriber(opts durablePullOpts) (Subscriber, error) {
+	if err := ensureConsumer(opts.logger, opts.js, opts.stream, opts.consumer); err != nil {
+		return nil, err
+	}
+	return newSubscriber(subscriberOpts{
+		ctx:    opts.ctx,
+		logger: opts.logger.WithPrefix(opts.logPrefix),
+		newsub: func() (*nats.Subscription, error) {
+			if err := ensureConsumer(opts.logger, opts.js, opts.stream, opts.consumer); err != nil {
+				return nil, err
+			}
+			return opts.js.PullSubscribe(opts.consumer.FilterSubject, opts.consumer.Durable, opts.subOpts...)
+		},
+		handler:    opts.handler,
+		maxfetch:   opts.maxfetch,
+		disableLog: opts.disableLog,
+	}), nil
+}
+
+func deliverSubOpt(policy nats.DeliverPolicy, fallback nats.SubOpt) nats.SubOpt {
+	switch policy {
+	case nats.DeliverAllPolicy:
+		return nats.DeliverAll()
+	case nats.DeliverLastPolicy:
+		return nats.DeliverLast()
+	case nats.DeliverLastPerSubjectPolicy:
+		return nats.DeliverLastPerSubject()
+	case nats.DeliverNewPolicy:
+		return nats.DeliverNew()
+	default:
+		return fallback
+	}
+}
+
+func ensureConsumer(log logger.Logger, js nats.JetStreamContext, stream string, cconfig *nats.ConsumerConfig) error {
+	ci, _ := js.ConsumerInfo(stream, cconfig.Durable)
+	if ci == nil {
+		if _, err := js.AddConsumer(stream, cconfig); err != nil && !isConsumerNameAlreadyExistsError(err) {
+			return err
+		}
+		return nil
+	}
+	if msg, ok := diffConfig(ci.Config, *cconfig); !ok {
+		log.Warn("consumer %s for stream %s has a configuration mismatch (%s) and must be updated", cconfig.Durable, stream, msg)
+		if _, err := js.UpdateConsumer(stream, cconfig); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func diffConfig(a nats.ConsumerConfig, b nats.ConsumerConfig) (string, bool) {

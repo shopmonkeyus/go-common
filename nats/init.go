@@ -7,16 +7,24 @@ import (
 	"github.com/shopmonkeyus/go-common/logger"
 )
 
-// NewNats will return a new nats connections
+// NewNats will return a new nats connection that keeps reconnecting if the
+// connection is lost. The defaults can be overridden with opts.
 func NewNats(log logger.Logger, name string, hosts string, credentials gnats.Option, opts ...gnats.Option) (*gnats.Conn, error) {
-	_opts := make([]gnats.Option, len(opts))
-	copy(_opts, opts)
-	_opts = append(_opts, credentials)
-	_opts = append(_opts, gnats.Name(name))
-	nc, err := gnats.Connect(
-		hosts,
-		_opts...,
+	_opts := make([]gnats.Option, 0, len(opts)+5)
+	_opts = append(_opts,
+		gnats.MaxReconnects(-1),
+		gnats.DisconnectErrHandler(func(_ *gnats.Conn, err error) {
+			if err != nil {
+				log.Warn("nats disconnected: %s", err)
+			}
+		}),
+		gnats.ReconnectHandler(func(nc *gnats.Conn) {
+			log.Info("nats reconnected to %s", nc.ConnectedUrl())
+		}),
 	)
+	_opts = append(_opts, opts...)
+	_opts = append(_opts, credentials, gnats.Name(name))
+	nc, err := gnats.Connect(hosts, _opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to NATS hosts at %s. %w", hosts, err)
 	}

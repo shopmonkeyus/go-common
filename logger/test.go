@@ -3,6 +3,7 @@ package logger
 import (
 	"context"
 	"os"
+	"sync"
 )
 
 type TestLogEntry struct {
@@ -12,11 +13,19 @@ type TestLogEntry struct {
 }
 
 type TestLogger struct {
+	mu       *sync.Mutex
 	metadata map[string]interface{}
 	Logs     []TestLogEntry
+	root     *TestLogger
 }
 
 var _ Logger = (*TestLogger)(nil)
+
+func NewTestLogger() *TestLogger {
+	return &TestLogger{
+		mu: &sync.Mutex{},
+	}
+}
 
 func (c *TestLogger) WithSink(sink Sink, level LogLevel) Logger {
 	return c
@@ -42,11 +51,28 @@ func (c *TestLogger) With(metadata map[string]interface{}) Logger {
 			kv[k] = v
 		}
 	}
-	return &TestLogger{kv, c.Logs}
+	root := c.root
+	if root == nil {
+		root = c
+	}
+	return &TestLogger{
+		mu:       c.mu,
+		metadata: kv,
+		root:     root,
+	}
 }
 
 func (c *TestLogger) Log(level string, msg string, args ...interface{}) {
-	c.Logs = append(c.Logs, TestLogEntry{level, msg, args})
+	if c.mu == nil {
+		c.mu = &sync.Mutex{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.root != nil {
+		c.root.Logs = append(c.root.Logs, TestLogEntry{level, msg, args})
+	} else {
+		c.Logs = append(c.Logs, TestLogEntry{level, msg, args})
+	}
 }
 
 func (c *TestLogger) Trace(msg string, args ...interface{}) {
@@ -74,17 +100,10 @@ func (c *TestLogger) Fatal(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func (c *TestLogger) Flush() error {
-	return nil
-}
-
 func (c *TestLogger) WithContext(_ context.Context) Logger {
 	return c
 }
 
-// NewTestLogger returns a new Logger instance useful for testing
-func NewTestLogger() *TestLogger {
-	return &TestLogger{
-		Logs: make([]TestLogEntry, 0),
-	}
+func (c *TestLogger) Flush() error {
+	return nil
 }
