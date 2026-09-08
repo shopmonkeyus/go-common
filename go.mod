@@ -1,6 +1,6 @@
 module github.com/shopmonkeyus/go-common
 
-go 1.25.0
+go 1.26.0
 
 require (
 	cloud.google.com/go/secretmanager v1.14.2
@@ -18,7 +18,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/oauth2 v0.34.0
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.23.0
 	google.golang.org/api v0.204.0
 )
 
