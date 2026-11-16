@@ -300,7 +300,7 @@ func TestZapLoggerCallerPointsAtCallSite(t *testing.T) {
 func TestZapLoggerAddCallerSkip(t *testing.T) {
 	// Wrapper layer: an extra skip should make the caller jump past logAt.
 	logAt := func(l Logger, msg string) {
-		l.Info(msg)
+		l.Info("%s", msg)
 	}
 
 	var bufDefault bytes.Buffer
