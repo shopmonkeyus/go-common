@@ -13,5 +13,16 @@
     "automerge": true,
     "automergeType": "pr",
     "platformAutomerge": true
-  }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the govulncheck version in go install lines of workflows",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "go install (?<depName>golang\\.org/x/vuln)/cmd/govulncheck@(?<currentValue>v\\S+)"
+      ],
+      "datasourceTemplate": "go"
+    }
+  ]
 }
