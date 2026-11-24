@@ -146,6 +146,7 @@ func (d *Dns) Lookup(ctx context.Context, hostname string) (bool, *net.IP, error
 	if err != nil {
 		return false, nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return false, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
