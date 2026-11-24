@@ -39,9 +39,15 @@ type Fetcher interface {
 	FetchTable(ctx context.Context, table string) (io.ReadCloser, error)
 }
 
-type ModelRegistry interface {
+// ModelGetter returns the schema model for a table.
+type ModelGetter interface {
 	Get(ctx context.Context, table string) (*Model, error)
 }
+
+// ModelRegistry is the old name for ModelGetter.
+//
+// Deprecated: Use ModelGetter.
+type ModelRegistry = ModelGetter
 
 type APIFetcher struct {
 	URL    string
@@ -92,7 +98,7 @@ type modelRegistry struct {
 	expireAfter time.Duration
 }
 
-var _ ModelRegistry = (*modelRegistry)(nil)
+var _ ModelGetter = (*modelRegistry)(nil)
 
 func (r *modelRegistry) Get(ctx context.Context, table string) (*Model, error) {
 	r.lock.Lock()
@@ -129,7 +135,7 @@ func (r *modelRegistry) Get(ctx context.Context, table string) (*Model, error) {
 }
 
 // NewModelRegistry creates a new model registry using the provided fetcher.
-func NewModelRegistry(fetcher Fetcher, opts ...WithOption) ModelRegistry {
+func NewModelRegistry(fetcher Fetcher, opts ...WithOption) ModelGetter {
 	opt := &ModelRegistryOption{
 		ExpireAfter: defaultExpireAfter,
 	}

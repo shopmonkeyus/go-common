@@ -16,10 +16,16 @@ import (
 
 var ErrInvalidIP = fmt.Errorf("invalid ip address resolved for hostname")
 
-type DNS interface {
+// Resolver resolves a hostname to an IP address.
+type Resolver interface {
 	// Lookup performs a DNS lookup for the given hostname and returns a valid IP address for the A record.
 	Lookup(ctx context.Context, hostname string) (bool, *net.IP, error)
 }
+
+// DNS is the old name for Resolver.
+//
+// Deprecated: Use Resolver.
+type DNS = Resolver
 
 type RecordType uint8
 
@@ -82,7 +88,7 @@ type Dns struct {
 	isLocal bool
 }
 
-var _ DNS = (*Dns)(nil)
+var _ Resolver = (*Dns)(nil)
 
 var ipv4 = regexp.MustCompile(`^(((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4})`)
 var magicIpAddress = "169.254.169.254"
