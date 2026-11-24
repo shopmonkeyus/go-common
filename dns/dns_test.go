@@ -172,3 +172,9 @@ func TestInvalidDNSEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestDeprecatedDNSNameIsResolver(t *testing.T) {
+	var r Resolver = New(cache.NewInMemory(context.Background(), time.Second))
+	var d DNS = r
+	assert.Same(t, r, d)
+}

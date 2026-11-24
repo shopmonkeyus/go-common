@@ -85,3 +85,9 @@ func TestNewModelRegistryWithAPIFetcher(t *testing.T) {
 		t.Fatalf("expected model to be %v, got %v", m, model)
 	}
 }
+
+func TestDeprecatedModelRegistryNameIsModelGetter(t *testing.T) {
+	var g ModelGetter = NewModelRegistry(&testFetcher{})
+	var r ModelRegistry = g
+	assert.Same(t, g, r)
+}
