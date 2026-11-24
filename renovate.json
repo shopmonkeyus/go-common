@@ -6,6 +6,11 @@
       "description": "Automerge non-major updates",
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
+    },
+    {
+      "description": "Run go mod tidy so go.sum keeps the module hashes that go tool govulncheck needs",
+      "matchManagers": ["gomod"],
+      "postUpdateOptions": ["gomodTidy"]
     }
   ],
   "lockFileMaintenance": {
