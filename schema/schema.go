@@ -75,10 +75,22 @@ func (f *APIFetcher) FetchTable(ctx context.Context, table string) (io.ReadClose
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		drainAndClose(resp.Body)
 		return nil, fmt.Errorf("failed to fetch model: %s", resp.Status)
 	}
 
 	return resp.Body, nil
+}
+
+// maxDrainBytes caps how much of an unread body drainAndClose reads.
+const maxDrainBytes = 64 << 10
+
+// drainAndClose reads the rest of the body before closing it. Over HTTP/1.1, Go
+// returns a connection to the pool only when its body was read to the end.
+// The cap stops a large body from holding up the caller; past it, Go closes the connection.
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainBytes))
+	_ = body.Close()
 }
 
 // NewAPIFetcher creates a new API fetcher using the provided URL and API key.
@@ -114,7 +126,7 @@ func (r *modelRegistry) Get(ctx context.Context, table string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rc.Close()
+	defer drainAndClose(rc)
 
 	var res Result
 	if err := json.NewDecoder(rc).Decode(&res); err != nil {
