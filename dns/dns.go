@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -152,7 +153,7 @@ func (d *Dns) Lookup(ctx context.Context, hostname string) (bool, *net.IP, error
 	if err != nil {
 		return false, nil, err
 	}
-	defer resp.Body.Close()
+	defer drainAndClose(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return false, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
@@ -189,6 +190,17 @@ func (d *Dns) Lookup(ctx context.Context, hostname string) (bool, *net.IP, error
 	}
 	d.cache.Set(cacheKey, ips, expires)
 	return true, &ips[0], nil
+}
+
+// maxDrainBytes caps how much of an unread body drainAndClose reads.
+const maxDrainBytes = 64 << 10
+
+// drainAndClose reads the rest of the body before closing it. Over HTTP/1.1, Go
+// returns a connection to the pool only when its body was read to the end.
+// The cap stops a large body from holding up the caller; past it, Go closes the connection.
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainBytes))
+	_ = body.Close()
 }
 
 // New creates a new DNS caching resolver.

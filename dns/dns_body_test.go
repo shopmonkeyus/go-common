@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,12 +12,14 @@ import (
 )
 
 type closeRecorder struct {
-	io.Reader
-	closed bool
+	*strings.Reader
+	closed        bool
+	unreadAtClose int
 }
 
 func (c *closeRecorder) Close() error {
 	c.closed = true
+	c.unreadAtClose = c.Len()
 	return nil
 }
 
@@ -45,17 +46,19 @@ func useStubTransport(t *testing.T, status int, body string) *closeRecorder {
 	return rec
 }
 
-func TestLookupClosesResponseBody(t *testing.T) {
+func TestLookupDrainsAndClosesResponseBody(t *testing.T) {
+	// The padding keeps bytes unread after the JSON decoder stops.
+	padding := strings.Repeat(" ", 8192)
 	tests := []struct {
 		name    string
 		status  int
 		body    string
 		wantErr bool
 	}{
-		{"Success", http.StatusOK, `{"Status":0,"Answer":[{"name":"example.com","type":1,"ttl":60,"data":"93.184.216.34"}]}`, false},
-		{"BadStatus", http.StatusInternalServerError, `oops`, true},
+		{"Success", http.StatusOK, `{"Status":0,"Answer":[{"name":"example.com","type":1,"ttl":60,"data":"93.184.216.34"}]}` + padding, false},
+		{"BadStatus", http.StatusInternalServerError, `oops` + padding, true},
 		{"BadJSON", http.StatusOK, `not json`, true},
-		{"LookupFailed", http.StatusOK, `{"Status":3}`, true},
+		{"LookupFailed", http.StatusOK, `{"Status":3}` + padding, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,6 +72,7 @@ func TestLookupClosesResponseBody(t *testing.T) {
 				assert.NoError(t, err)
 			}
 			assert.True(t, rec.closed, "response body was not closed")
+			assert.Zero(t, rec.unreadAtClose, "response body was not read to the end before close")
 		})
 	}
 }
